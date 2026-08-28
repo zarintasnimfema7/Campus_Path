@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.routes.cv import router as cv_router
 
 from app.routes.jobs import router as jobs_router
 
@@ -33,6 +34,9 @@ app.add_middleware(
 
 
 app.include_router(jobs_router)
+
+app.include_router(jobs_router)
+app.include_router(cv_router)
 
 
 @app.get("/")
