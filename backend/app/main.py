@@ -15,6 +15,10 @@ from app.routes.planner import (
     router as planner_router,
 )
 
+from app.routes.evidence import (
+    router as evidence_router,
+)
+
 load_dotenv()
 
 
@@ -48,6 +52,8 @@ app.include_router(cv_router)
 app.include_router(skill_gap_router)
 
 app.include_router(planner_router)
+
+app.include_router(evidence_router)
 
 
 @app.get("/")
