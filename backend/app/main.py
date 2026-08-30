@@ -11,6 +11,10 @@ from app.routes.skill_gap import (
     router as skill_gap_router,
 )
 
+from app.routes.planner import (
+    router as planner_router,
+)
+
 load_dotenv()
 
 
@@ -42,6 +46,8 @@ app.include_router(jobs_router)
 app.include_router(cv_router)
 
 app.include_router(skill_gap_router)
+
+app.include_router(planner_router)
 
 
 @app.get("/")
