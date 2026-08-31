@@ -23,6 +23,16 @@ from app.routes.replanner import (
     router as replanner_router,
 )
 
+from app.database.supabase import supabase
+
+from app.routes.persistence import (
+    router as persistence_router,
+)
+
+from app.routes.workflow import (
+    router as workflow_router,
+)
+
 load_dotenv()
 
 
@@ -61,6 +71,9 @@ app.include_router(evidence_router)
 
 app.include_router(replanner_router)
 
+app.include_router(persistence_router)
+app.include_router(workflow_router)
+
 
 @app.get("/")
 def root():
@@ -78,3 +91,30 @@ def health():
             "development",
         ),
     }
+
+
+@app.get("/database/health")
+def database_health():
+
+    try:
+        (
+            supabase
+            .table("users")
+            .select("id")
+            .limit(1)
+            .execute()
+        )
+
+        return {
+            "status": "ok",
+            "database": "Supabase PostgreSQL",
+            "connected": True,
+        }
+
+    except Exception as error:
+
+        return {
+            "status": "error",
+            "connected": False,
+            "detail": str(error),
+        }
