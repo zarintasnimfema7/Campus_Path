@@ -1,29 +1,55 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Loader2, Route } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-export default function Home() {
-  const [status, setStatus] = useState("Checking backend...");
+import { supabase } from "@/lib/supabase";
+
+export default function HomePage() {
+  const router = useRouter();
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/health")
-      .then((res) => res.json())
-      .then((data) => {
-        setStatus(data.status);
-      })
-      .catch(() => {
-        setStatus("Backend connection failed");
-      });
-  }, []);
+    async function redirectUser() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      const workflow =
+        sessionStorage.getItem("campuspath_workflow");
+
+      if (workflow) {
+        router.replace("/dashboard");
+      } else {
+        router.replace("/onboarding");
+      }
+    }
+
+    redirectUser();
+  }, [router]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold">CampusPath</h1>
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#07111F] text-white">
+      <div className="absolute h-72 w-72 animate-pulse rounded-full bg-violet-600/20 blur-[100px]" />
 
-        <p className="mt-4">
-          Backend status: <strong>{status}</strong>
-        </p>
+      <div className="relative text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 shadow-2xl shadow-violet-900/40">
+          <Route className="h-7 w-7" />
+        </div>
+
+        <h1 className="mt-5 text-2xl font-bold">
+          CampusPath
+        </h1>
+
+        <div className="mt-5 flex items-center justify-center gap-2 text-sm text-slate-400">
+          <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
+          Preparing your workspace
+        </div>
       </div>
     </main>
   );
