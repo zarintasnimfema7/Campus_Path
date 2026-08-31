@@ -5,7 +5,7 @@ from app.models.plan import LearningPlan
 
 root_agent = LlmAgent(
     name="planner_agent",
-    model="gemini-3.5-flash",
+    model="gemini-3.6-flash",
 
     description=(
         "Creates practical career-readiness plans "

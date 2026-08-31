@@ -5,7 +5,7 @@ from app.models.skill_gap import SkillGapAgentResult
 
 root_agent = LlmAgent(
     name="skill_gap_agent",
-    model="gemini-3.5-flash",
+    model="gemini-3.6-flash",
 
     description=(
         "Compares a student's CV profile with job requirements "

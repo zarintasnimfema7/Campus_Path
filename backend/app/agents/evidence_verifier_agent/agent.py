@@ -5,7 +5,7 @@ from app.models.evidence import AgentVerificationResult
 
 root_agent = LlmAgent(
     name="evidence_verifier_agent",
-    model="gemini-3.5-flash",
+    model="gemini-3.6-flash",
 
     description=(
         "Verifies GitHub repository evidence against "
