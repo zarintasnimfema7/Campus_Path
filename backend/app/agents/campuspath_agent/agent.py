@@ -5,7 +5,7 @@ from app.models.job import JobAnalysisResult
 
 root_agent = LlmAgent(
     name="campuspath_agent",
-    model="gemini-3.5-flash",
+    model="gemini-3.7-flash",
 
     description=(
         "CampusPath agent that analyzes job descriptions "

@@ -5,7 +5,7 @@ from app.models.cv import CVAnalysisResult
 
 root_agent = LlmAgent(
     name="cv_analysis_agent",
-    model="gemini-3.5-flash",
+    model="gemini-3.6-flash",
 
     description=(
         "Analyzes student CVs and extracts structured "
