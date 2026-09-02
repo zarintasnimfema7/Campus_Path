@@ -5,7 +5,6 @@ import {
   BookOpen,
   BriefcaseBusiness,
   CheckCircle2,
-  Github,
   GraduationCap,
   LayoutDashboard,
   LogOut,

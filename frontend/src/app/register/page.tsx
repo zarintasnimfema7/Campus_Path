@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   BriefcaseBusiness,
+  LockKeyhole,
   Mail,
   Sparkles,
   User,
@@ -18,6 +19,7 @@ export default function RegisterPage() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -30,13 +32,13 @@ export default function RegisterPage() {
     setLoading(true);
     setError("");
 
-    const { error: authError } =
-      await supabase.auth.signInWithOtp({
-        email,
+    const { data, error: authError } =
+      await supabase.auth.signUp({
+        email: email.trim(),
+        password,
         options: {
-          shouldCreateUser: true,
           data: {
-            full_name: name,
+            full_name: name.trim(),
           },
         },
       });
@@ -48,14 +50,32 @@ export default function RegisterPage() {
       return;
     }
 
+    const { error: otpError } =
+      await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: {
+          shouldCreateUser: false,
+        },
+      });
+
+    if (otpError) {
+      setError(otpError.message);
+      return;
+    }
+
+    if (!data.user) {
+      setError("Account creation failed. Please try again.");
+      return;
+    }
+
     sessionStorage.setItem(
       "campuspath_email",
-      email
+      email.trim()
     );
 
     sessionStorage.setItem(
       "campuspath_name",
-      name
+      name.trim()
     );
 
     router.push("/verify-otp");
@@ -178,6 +198,29 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  Password
+                </label>
+
+                <div className="relative">
+                  <LockKeyhole className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
+                    placeholder="At least 6 characters"
+                    autoComplete="new-password"
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10"
+                  />
+                </div>
+              </div>
+
               {error && (
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
                   {error}
@@ -190,8 +233,8 @@ export default function RegisterPage() {
                 className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading
-                  ? "Sending verification..."
-                  : "Continue"}
+                  ? "Creating account..."
+                  : "Create account"}
 
                 {!loading && (
                   <ArrowRight className="h-4 w-4" />

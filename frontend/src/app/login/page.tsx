@@ -18,6 +18,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -35,6 +36,17 @@ export default function LoginPage() {
       setLoading(true);
 
       const { error: loginError } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+
+      if (loginError) {
+        setError(loginError.message);
+        return;
+      }
+
+      const { error: otpError } =
         await supabase.auth.signInWithOtp({
           email: email.trim(),
           options: {
@@ -42,8 +54,8 @@ export default function LoginPage() {
           },
         });
 
-      if (loginError) {
-        setError(loginError.message);
+      if (otpError) {
+        setError(otpError.message);
         return;
       }
 
@@ -59,7 +71,7 @@ export default function LoginPage() {
 
       router.push("/verify-otp");
     } catch {
-      setError("Unable to send your login code.");
+      setError("Unable to sign in. Please check your email and password.");
     } finally {
       setLoading(false);
     }
@@ -159,6 +171,28 @@ export default function LoginPage() {
                 autoComplete="email"
                 className="h-16 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-900 shadow-sm outline-none transition duration-300 placeholder:text-slate-400 focus:-translate-y-0.5 focus:border-violet-400 focus:shadow-lg focus:shadow-violet-100 focus:ring-4 focus:ring-violet-100"
               />
+            </div>
+
+            <div className="mt-5">
+              <label className="text-sm font-bold text-slate-700">
+                Password
+              </label>
+
+              <div className="relative mt-2">
+                <LockKeyhole className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                  placeholder="Your password"
+                  autoComplete="current-password"
+                  className="h-16 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-900 shadow-sm outline-none transition duration-300 placeholder:text-slate-400 focus:-translate-y-0.5 focus:border-violet-400 focus:shadow-lg focus:shadow-violet-100 focus:ring-4 focus:ring-violet-100"
+                />
+              </div>
             </div>
 
             {error && (
