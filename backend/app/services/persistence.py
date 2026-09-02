@@ -1,4 +1,10 @@
-from app.database.supabase import supabase
+from uuid import uuid4
+
+from fastapi.encoders import jsonable_encoder
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+
+from app.database.neon import pool
 
 from app.models.cv import CVAnalysisResult
 from app.models.evidence import EvidenceVerificationResult
@@ -7,141 +13,253 @@ from app.models.plan import LearningPlan
 from app.models.skill_gap import SkillGapResult
 
 
+def as_json(value):
+    """Convert Python/Pydantic data into PostgreSQL JSONB."""
+    return Jsonb(jsonable_encoder(value))
+
+
+# =====================================================
+# USER
+# =====================================================
+
 def create_user(
     name: str,
     email: str,
     github_username: str | None = None,
 ):
-    response = (
-        supabase
-        .table("users")
-        .insert(
-            {
-                "name": name,
-                "email": email,
-                "github_username": github_username,
-            }
+    user_id = str(uuid4())
+
+    query = """
+        INSERT INTO users (
+            id,
+            name,
+            email,
+            github_username
         )
-        .execute()
-    )
+        VALUES (%s, %s, %s, %s)
 
-    return response.data[0]
+        ON CONFLICT (email)
+        DO UPDATE SET
+            name = EXCLUDED.name,
+            github_username = COALESCE(
+                EXCLUDED.github_username,
+                users.github_username
+            ),
+            updated_at = NOW()
 
+        RETURNING
+            id,
+            name,
+            email,
+            github_username,
+            created_at,
+            updated_at;
+    """
+
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                query,
+                (
+                    user_id,
+                    name,
+                    email,
+                    github_username,
+                ),
+            )
+
+            result = cursor.fetchone()
+
+        conn.commit()
+
+    return result
+
+
+# =====================================================
+# JOB TARGET
+# =====================================================
 
 def save_job_target(
     user_id: str,
     raw_description: str,
     job: JobAnalysisResult,
 ):
-    response = (
-        supabase
-        .table("job_targets")
-        .insert(
-            {
-                "user_id": user_id,
-                "job_title": job.job_title,
-                "raw_description": raw_description,
-                "required_skills": job.required_skills,
-                "preferred_skills": job.preferred_skills,
-                "experience": job.experience,
-                "education": job.education,
-                "responsibilities": job.responsibilities,
-            }
+    query = """
+        INSERT INTO job_targets (
+            user_id,
+            job_title,
+            raw_description,
+            required_skills,
+            preferred_skills,
+            experience,
+            education,
+            responsibilities
         )
-        .execute()
-    )
+        VALUES (
+            %s, %s, %s, %s,
+            %s, %s, %s, %s
+        )
 
-    return response.data[0]
+        RETURNING
+            id::text AS id,
+            user_id,
+            job_title,
+            created_at;
+    """
 
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                query,
+                (
+                    user_id,
+                    job.job_title,
+                    raw_description,
+                    as_json(job.required_skills),
+                    as_json(job.preferred_skills),
+                    as_json(job.experience),
+                    as_json(job.education),
+                    as_json(job.responsibilities),
+                ),
+            )
+
+            result = cursor.fetchone()
+
+        conn.commit()
+
+    return result
+
+
+# =====================================================
+# STUDENT PROFILE
+# =====================================================
 
 def save_student_profile(
     user_id: str,
     profile: CVAnalysisResult,
 ):
-    response = (
-        supabase
-        .table("student_profiles")
-        .insert(
-            {
-                "user_id": user_id,
-                "name": profile.name,
-                "skills": profile.skills,
-                "education": [
-                    item.model_dump()
-                    for item in profile.education
-                ],
-                "projects": [
-                    item.model_dump()
-                    for item in profile.projects
-                ],
-                "experience": [
-                    item.model_dump()
-                    for item in profile.experience
-                ],
-                "certifications": profile.certifications,
-            }
+    query = """
+        INSERT INTO student_profiles (
+            user_id,
+            name,
+            skills,
+            education,
+            projects,
+            experience,
+            certifications
         )
-        .execute()
-    )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
 
-    return response.data[0]
+        RETURNING
+            id::text AS id,
+            user_id,
+            name,
+            created_at;
+    """
 
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                query,
+                (
+                    user_id,
+                    profile.name,
+                    as_json(profile.skills),
+                    as_json(profile.education),
+                    as_json(profile.projects),
+                    as_json(profile.experience),
+                    as_json(profile.certifications),
+                ),
+            )
+
+            result = cursor.fetchone()
+
+        conn.commit()
+
+    return result
+
+
+# =====================================================
+# SKILL GAP + READINESS
+# =====================================================
 
 def save_skill_gap(
     user_id: str,
     job_target_id: str,
     skill_gap: SkillGapResult,
 ):
-
     rows = []
 
     for assessment in skill_gap.required_assessments:
         rows.append(
-            {
-                "user_id": user_id,
-                "job_target_id": job_target_id,
-                "skill": assessment.skill,
-                "skill_type": "required",
-                "status": assessment.status,
-                "evidence": assessment.evidence,
-            }
+            (
+                user_id,
+                job_target_id,
+                assessment.skill,
+                "required",
+                assessment.status,
+                as_json(assessment.evidence),
+            )
         )
 
     for assessment in skill_gap.preferred_assessments:
         rows.append(
-            {
-                "user_id": user_id,
-                "job_target_id": job_target_id,
-                "skill": assessment.skill,
-                "skill_type": "preferred",
-                "status": assessment.status,
-                "evidence": assessment.evidence,
-            }
+            (
+                user_id,
+                job_target_id,
+                assessment.skill,
+                "preferred",
+                assessment.status,
+                as_json(assessment.evidence),
+            )
         )
 
-    if rows:
-        (
-            supabase
-            .table("skill_assessments")
-            .insert(rows)
-            .execute()
+    assessment_query = """
+        INSERT INTO skill_assessments (
+            user_id,
+            job_target_id,
+            skill,
+            skill_type,
+            status,
+            evidence
         )
+        VALUES (%s, %s, %s, %s, %s, %s);
+    """
 
-    (
-        supabase
-        .table("readiness_history")
-        .insert(
-            {
-                "user_id": user_id,
-                "job_target_id": job_target_id,
-                "readiness_score": skill_gap.readiness_score,
-                "required_score": skill_gap.required_score,
-                "preferred_score": skill_gap.preferred_score,
-                "reason": "Initial skill gap analysis",
-            }
+    readiness_query = """
+        INSERT INTO readiness_history (
+            user_id,
+            job_target_id,
+            readiness_score,
+            required_score,
+            preferred_score,
+            reason
         )
-        .execute()
-    )
+        VALUES (%s, %s, %s, %s, %s, %s);
+    """
+
+    with pool.connection() as conn:
+        with conn.cursor() as cursor:
+
+            if rows:
+                cursor.executemany(
+                    assessment_query,
+                    rows,
+                )
+
+            cursor.execute(
+                readiness_query,
+                (
+                    user_id,
+                    job_target_id,
+                    skill_gap.readiness_score,
+                    skill_gap.required_score,
+                    skill_gap.preferred_score,
+                    "Initial skill gap analysis",
+                ),
+            )
+
+        conn.commit()
 
     return {
         "saved_assessments": len(rows),
@@ -149,60 +267,105 @@ def save_skill_gap(
     }
 
 
+# =====================================================
+# LEARNING PLAN + TASKS
+# =====================================================
+
 def save_learning_plan(
     user_id: str,
     job_target_id: str,
     plan: LearningPlan,
     readiness_score: float,
 ):
-
-    plan_response = (
-        supabase
-        .table("plans")
-        .insert(
-            {
-                "user_id": user_id,
-                "job_target_id": job_target_id,
-                "title": plan.plan_title,
-                "summary": plan.summary,
-                "readiness_score": readiness_score,
-            }
+    plan_query = """
+        INSERT INTO plans (
+            user_id,
+            job_target_id,
+            title,
+            summary,
+            readiness_score
         )
-        .execute()
-    )
+        VALUES (%s, %s, %s, %s, %s)
 
-    saved_plan = plan_response.data[0]
+        RETURNING
+            id::text AS id,
+            user_id,
+            job_target_id::text AS job_target_id,
+            title,
+            summary,
+            readiness_score,
+            created_at;
+    """
 
-    plan_id = saved_plan["id"]
-
-    task_rows = []
-
-    for task in plan.tasks:
-        task_rows.append(
-            {
-                "plan_id": plan_id,
-                "target_skill": task.target_skill,
-                "title": task.title,
-                "goal": task.goal,
-                "action": task.action,
-                "evidence_required": task.evidence_required,
-                "estimated_hours": task.estimated_hours,
-                "priority": task.priority,
-                "status": "pending",
-            }
+    task_query = """
+        INSERT INTO tasks (
+            plan_id,
+            target_skill,
+            title,
+            goal,
+            action,
+            evidence_required,
+            estimated_hours,
+            priority,
+            status
         )
-
-    saved_tasks = []
-
-    if task_rows:
-        task_response = (
-            supabase
-            .table("tasks")
-            .insert(task_rows)
-            .execute()
+        VALUES (
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s
         )
 
-        saved_tasks = task_response.data
+        RETURNING
+            id::text AS id,
+            plan_id::text AS plan_id,
+            target_skill,
+            title,
+            goal,
+            action,
+            estimated_hours,
+            priority,
+            status,
+            created_at;
+    """
+
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+
+            cursor.execute(
+                plan_query,
+                (
+                    user_id,
+                    job_target_id,
+                    plan.plan_title,
+                    plan.summary,
+                    readiness_score,
+                ),
+            )
+
+            saved_plan = cursor.fetchone()
+
+            saved_tasks = []
+
+            for task in plan.tasks:
+                cursor.execute(
+                    task_query,
+                    (
+                        saved_plan["id"],
+                        task.target_skill,
+                        task.title,
+                        task.goal,
+                        task.action,
+                        as_json(task.evidence_required),
+                        task.estimated_hours,
+                        task.priority,
+                        "pending",
+                    ),
+                )
+
+                saved_tasks.append(
+                    cursor.fetchone()
+                )
+
+        conn.commit()
 
     return {
         "plan": saved_plan,
@@ -210,73 +373,114 @@ def save_learning_plan(
     }
 
 
+# =====================================================
+# GITHUB EVIDENCE
+# =====================================================
+
 def save_evidence(
     task_id: str,
     verification: EvidenceVerificationResult,
 ):
-
-    response = (
-        supabase
-        .table("evidence")
-        .insert(
-            {
-                "task_id": task_id,
-                "repository_url": verification.repository_url,
-                "verification_score": verification.verification_score,
-                "overall_status": verification.overall_status,
-                "checks": [
-                    check.model_dump()
-                    for check in verification.checks
-                ],
-                "summary": verification.summary,
-            }
+    evidence_query = """
+        INSERT INTO evidence (
+            task_id,
+            repository_url,
+            verification_score,
+            overall_status,
+            checks,
+            summary
         )
-        .execute()
-    )
+        VALUES (%s, %s, %s, %s, %s, %s)
 
-    # Update task status.
+        RETURNING
+            id::text AS id,
+            task_id::text AS task_id,
+            repository_url,
+            verification_score,
+            overall_status,
+            checks,
+            summary,
+            created_at;
+    """
+
+    update_task_query = """
+        UPDATE tasks
+        SET
+            status = %s,
+            updated_at = NOW()
+        WHERE id = %s;
+    """
+
     if verification.overall_status == "verified":
         task_status = "verified"
     else:
         task_status = "completed"
 
-    (
-        supabase
-        .table("tasks")
-        .update(
-            {
-                "status": task_status
-            }
-        )
-        .eq(
-            "id",
-            task_id,
-        )
-        .execute()
-    )
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
 
-    return response.data[0]
+            cursor.execute(
+                evidence_query,
+                (
+                    task_id,
+                    verification.repository_url,
+                    verification.verification_score,
+                    verification.overall_status,
+                    as_json(verification.checks),
+                    verification.summary,
+                ),
+            )
 
+            saved_evidence = cursor.fetchone()
+
+            cursor.execute(
+                update_task_query,
+                (
+                    task_status,
+                    task_id,
+                ),
+            )
+
+        conn.commit()
+
+    return saved_evidence
+
+
+# =====================================================
+# ACTIVITY LOG
+# =====================================================
 
 def log_activity(
     user_id: str,
     action: str,
     details: dict | None = None,
 ):
-
-    (
-        supabase
-        .table("activity_logs")
-        .insert(
-            {
-                "user_id": user_id,
-                "action": action,
-                "details": details or {},
-            }
+    query = """
+        INSERT INTO activity_logs (
+            user_id,
+            action,
+            details
         )
-        .execute()
-    )
+        VALUES (%s, %s, %s);
+    """
 
+    with pool.connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                query,
+                (
+                    user_id,
+                    action,
+                    as_json(details or {}),
+                ),
+            )
+
+        conn.commit()
+
+
+# =====================================================
+# AGENT RUN LOG
+# =====================================================
 
 def log_agent_run(
     user_id: str,
@@ -285,18 +489,28 @@ def log_agent_run(
     output_data: dict,
     status: str = "completed",
 ):
-
-    (
-        supabase
-        .table("agent_runs")
-        .insert(
-            {
-                "user_id": user_id,
-                "agent_name": agent_name,
-                "status": status,
-                "input_data": input_data,
-                "output_data": output_data,
-            }
+    query = """
+        INSERT INTO agent_runs (
+            user_id,
+            agent_name,
+            status,
+            input_data,
+            output_data
         )
-        .execute()
-    )
+        VALUES (%s, %s, %s, %s, %s);
+    """
+
+    with pool.connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                query,
+                (
+                    user_id,
+                    agent_name,
+                    status,
+                    as_json(input_data),
+                    as_json(output_data),
+                ),
+            )
+
+        conn.commit()
