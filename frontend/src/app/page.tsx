@@ -1,21 +1,19 @@
 "use client";
 
 import { Loader2, Route } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
-import { supabase } from "@/lib/supabase";
-
 export default function HomePage() {
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
 
   useEffect(() => {
-    async function redirectUser() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    function redirectUser() {
+      if (!isLoaded) return;
 
-      if (!session) {
+      if (!isSignedIn) {
         router.replace("/login");
         return;
       }
@@ -31,7 +29,7 @@ export default function HomePage() {
     }
 
     redirectUser();
-  }, [router]);
+  }, [isLoaded, isSignedIn, router]);
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#07111F] text-white">

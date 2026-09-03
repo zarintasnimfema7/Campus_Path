@@ -28,20 +28,12 @@ async def start_workflow(
     cv: UploadFile = File(...),
     current_user=Depends(get_current_user),
 ):
-    user_id = current_user.id
-    user_email = current_user.email
-
-    user_name = None
-
-    if current_user.user_metadata:
-        user_name = current_user.user_metadata.get(
-            "full_name"
-        )
+    user_id = current_user["id"]
 
     ensure_user_exists(
         user_id=user_id,
-        email=user_email,
-        name=user_name,
+        email=current_user.get("email"),
+        name=current_user.get("name"),
     )
 
     if not cv.filename:

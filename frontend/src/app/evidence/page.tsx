@@ -17,9 +17,9 @@ import {
 import { FaGithub } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 
-import { apiFetch } from "@/lib/api";
-import { supabase } from "@/lib/supabase";
+import { useApiFetch } from "@/lib/api";
 
 type Task = {
   title?: string;
@@ -93,6 +93,8 @@ type ReplanResult = {
 
 export default function EvidencePage() {
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
+  const apiFetch = useApiFetch();
 
   const [workflow, setWorkflow] =
     useState<WorkflowData | null>(null);
@@ -118,11 +120,9 @@ export default function EvidencePage() {
   useEffect(() => {
     async function loadPage() {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        if (!isLoaded) return;
 
-        if (!session) {
+        if (!isSignedIn) {
           router.replace("/login");
           return;
         }
@@ -166,7 +166,7 @@ export default function EvidencePage() {
     }
 
     loadPage();
-  }, [router]);
+  }, [isLoaded, isSignedIn, router]);
 
   const availableSkills = Array.from(
     new Set([

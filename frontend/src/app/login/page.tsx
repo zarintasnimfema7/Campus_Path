@@ -9,13 +9,22 @@ import {
   Route,
   Sparkles,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
 
-import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
+import { useAuth, useSignIn } from "@clerk/nextjs";
 
 export default function LoginPage() {
   const router = useRouter();
+
+  const { signIn } = useSignIn();
+  const { isSignedIn } = useAuth();
+
+useEffect(() => {
+  if (isSignedIn) {
+    router.replace("/dashboard");
+  }
+}, [isSignedIn, router]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,46 +41,104 @@ export default function LoginPage() {
       return;
     }
 
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const { error: loginError } =
-        await supabase.auth.signInWithPassword({
-          email: email.trim(),
+      const { error: signInError } =
+        await signIn.password({
+          emailAddress: email.trim(),
           password,
         });
 
-      if (loginError) {
-        setError(loginError.message);
+      if (signInError) {
+        setError(
+          signInError.message ||
+            "Unable to sign in. Please check your email and password."
+        );
         return;
       }
 
-      const { error: otpError } =
-        await supabase.auth.signInWithOtp({
-          email: email.trim(),
-          options: {
-            shouldCreateUser: false,
+      // Normal email + password login completed.
+      if (signIn.status === "complete") {
+        await signIn.finalize({
+          navigate: ({
+            session,
+            decorateUrl,
+          }) => {
+            // Clerk may require another security step
+            // if MFA/device trust is enabled later.
+            if (session?.currentTask) {
+              console.log(
+                "Clerk session task:",
+                session.currentTask
+              );
+
+              setError(
+                "Additional verification is required for this account."
+              );
+
+              return;
+            }
+
+            const existingWorkflow =
+              sessionStorage.getItem(
+                "campuspath_workflow"
+              );
+
+            const destination =
+              existingWorkflow
+                ? "/dashboard"
+                : "/onboarding";
+
+            const url =
+              decorateUrl(destination);
+
+            if (url.startsWith("http")) {
+              window.location.href = url;
+            } else {
+              router.push(url);
+            }
           },
         });
 
-      if (otpError) {
-        setError(otpError.message);
         return;
       }
 
-      sessionStorage.setItem(
-        "campuspath_email",
-        email.trim()
-      );
+      // This can happen later if MFA is enabled.
+      if (
+        signIn.status === "needs_second_factor"
+      ) {
+        setError(
+          "Additional verification is required for this account."
+        );
 
-      sessionStorage.setItem(
-        "campuspath_auth_mode",
-        "login"
-      );
+        return;
+      }
 
-      router.push("/verify-otp");
-    } catch {
-      setError("Unable to sign in. Please check your email and password.");
+      if (
+        signIn.status === "needs_client_trust"
+      ) {
+        setError(
+          "This device requires additional verification."
+        );
+
+        return;
+      }
+
+      setError(
+        "Sign in could not be completed. Please try again."
+      );
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        "Unable to sign in. Please check your email and password."
+      );
     } finally {
       setLoading(false);
     }
@@ -148,8 +215,8 @@ export default function LoginPage() {
             </h2>
 
             <p className="mt-4 leading-7 text-slate-500">
-              Enter your registered email. We&apos;ll send you
-              a secure one-time verification code.
+              Enter your registered email and password to
+              securely continue your career path.
             </p>
           </div>
 
@@ -208,7 +275,7 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <Loader2 className="h-5 w-5 animate-spin" />
-                  Sending code...
+                  Signing in...
                 </>
               ) : (
                 <>

@@ -16,8 +16,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-
-import { supabase } from "@/lib/supabase";
+import { useAuth, useClerk, useUser } from "@clerk/nextjs";
 
 type Item = {
   degree?: string;
@@ -51,6 +50,9 @@ type Workflow = {
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
+  const { signOut } = useClerk();
+  const { user } = useUser();
 
   const [workflow, setWorkflow] =
     useState<Workflow | null>(null);
@@ -59,17 +61,15 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function loadProfile() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    function loadProfile() {
+      if (!isLoaded) return;
 
-      if (!session) {
+      if (!isSignedIn) {
         router.replace("/login");
         return;
       }
 
-      setEmail(session.user.email ?? "");
+      setEmail(user?.primaryEmailAddress?.emailAddress ?? "");
 
       const stored =
         sessionStorage.getItem("campuspath_workflow");
@@ -88,10 +88,10 @@ export default function ProfilePage() {
     }
 
     loadProfile();
-  }, [router]);
+  }, [isLoaded, isSignedIn, router, user]);
 
   async function logout() {
-    await supabase.auth.signOut();
+    await signOut();
     sessionStorage.clear();
     router.replace("/login");
   }

@@ -30,8 +30,8 @@ async def replan(
 ):
     try:
         # JWT is verified before this endpoint runs.
-        # This is the authenticated Supabase user ID.
-        authenticated_user_id = current_user.id
+        
+        authenticated_user_id = current_user["id"]
 
         return await replan_student(
             request

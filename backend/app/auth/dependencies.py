@@ -1,48 +1,73 @@
-from fastapi import Header, HTTPException, status
+import os
 
-from app.database.supabase import supabase
+from dotenv import load_dotenv
+from fastapi import HTTPException, Request, status
+
+from clerk_backend_api import (
+    AuthenticateRequestOptions,
+    authenticate_request,
+)
+
+
+load_dotenv()
+
+
+CLERK_SECRET_KEY = os.getenv("CLERK_SECRET_KEY")
+
+CLERK_AUTHORIZED_PARTIES = [
+    item.strip()
+    for item in os.getenv(
+        "CLERK_AUTHORIZED_PARTIES",
+        "http://localhost:3000",
+    ).split(",")
+    if item.strip()
+]
+
+
+if not CLERK_SECRET_KEY:
+    raise RuntimeError(
+        "CLERK_SECRET_KEY is missing from environment variables."
+    )
 
 
 async def get_current_user(
-    authorization: str | None = Header(default=None),
+    request: Request,
 ):
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization header is missing.",
-        )
-
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header.",
-        )
-
-    token = authorization.removeprefix("Bearer ").strip()
-
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Access token is missing.",
-        )
-
     try:
-        response = supabase.auth.get_user(token)
+        auth_state = authenticate_request(
+            request,
+            AuthenticateRequestOptions(
+                secret_key=CLERK_SECRET_KEY,
+                authorized_parties=CLERK_AUTHORIZED_PARTIES,
+                accepts_token=["session_token"],
+            ),
+        )
 
-        user = response.user
-
-        if user is None:
+        if not auth_state.is_signed_in:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid authentication token.",
+                detail="Invalid or expired authentication token.",
             )
 
-        return user
+        user_id = auth_state.payload.get("sub")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User ID was not found in the token.",
+            )
+
+        return {
+            "id": user_id,
+            "session_id": auth_state.payload.get("sid"),
+        }
 
     except HTTPException:
         raise
 
-    except Exception:
+    except Exception as error:
+        print("Clerk authentication error:", error)
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired authentication token.",
