@@ -9,15 +9,25 @@ import {
   Route,
   Sparkles,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
 
-import { supabase } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
+import { useAuth, useSignIn } from "@clerk/nextjs";
 
 export default function LoginPage() {
   const router = useRouter();
 
+  const { signIn } = useSignIn();
+  const { isSignedIn } = useAuth();
+
+useEffect(() => {
+  if (isSignedIn) {
+    router.replace("/dashboard");
+  }
+}, [isSignedIn, router]);
+
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -31,35 +41,104 @@ export default function LoginPage() {
       return;
     }
 
+    if (!password) {
+      setError("Enter your password.");
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const { error: loginError } =
-        await supabase.auth.signInWithOtp({
-          email: email.trim(),
-          options: {
-            shouldCreateUser: false,
-          },
+      const { error: signInError } =
+        await signIn.password({
+          emailAddress: email.trim(),
+          password,
         });
 
-      if (loginError) {
-        setError(loginError.message);
+      if (signInError) {
+        setError(
+          signInError.message ||
+            "Unable to sign in. Please check your email and password."
+        );
         return;
       }
 
-      sessionStorage.setItem(
-        "campuspath_email",
-        email.trim()
-      );
+      // Normal email + password login completed.
+      if (signIn.status === "complete") {
+        await signIn.finalize({
+          navigate: ({
+            session,
+            decorateUrl,
+          }) => {
+            // Clerk may require another security step
+            // if MFA/device trust is enabled later.
+            if (session?.currentTask) {
+              console.log(
+                "Clerk session task:",
+                session.currentTask
+              );
 
-      sessionStorage.setItem(
-        "campuspath_auth_mode",
-        "login"
-      );
+              setError(
+                "Additional verification is required for this account."
+              );
 
-      router.push("/verify-otp");
-    } catch {
-      setError("Unable to send your login code.");
+              return;
+            }
+
+            const existingWorkflow =
+              sessionStorage.getItem(
+                "campuspath_workflow"
+              );
+
+            const destination =
+              existingWorkflow
+                ? "/dashboard"
+                : "/onboarding";
+
+            const url =
+              decorateUrl(destination);
+
+            if (url.startsWith("http")) {
+              window.location.href = url;
+            } else {
+              router.push(url);
+            }
+          },
+        });
+
+        return;
+      }
+
+      // This can happen later if MFA is enabled.
+      if (
+        signIn.status === "needs_second_factor"
+      ) {
+        setError(
+          "Additional verification is required for this account."
+        );
+
+        return;
+      }
+
+      if (
+        signIn.status === "needs_client_trust"
+      ) {
+        setError(
+          "This device requires additional verification."
+        );
+
+        return;
+      }
+
+      setError(
+        "Sign in could not be completed. Please try again."
+      );
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        "Unable to sign in. Please check your email and password."
+      );
     } finally {
       setLoading(false);
     }
@@ -136,8 +215,8 @@ export default function LoginPage() {
             </h2>
 
             <p className="mt-4 leading-7 text-slate-500">
-              Enter your registered email. We&apos;ll send you
-              a secure one-time verification code.
+              Enter your registered email and password to
+              securely continue your career path.
             </p>
           </div>
 
@@ -161,6 +240,28 @@ export default function LoginPage() {
               />
             </div>
 
+            <div className="mt-5">
+              <label className="text-sm font-bold text-slate-700">
+                Password
+              </label>
+
+              <div className="relative mt-2">
+                <LockKeyhole className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                  placeholder="Your password"
+                  autoComplete="current-password"
+                  className="h-16 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-900 shadow-sm outline-none transition duration-300 placeholder:text-slate-400 focus:-translate-y-0.5 focus:border-violet-400 focus:shadow-lg focus:shadow-violet-100 focus:ring-4 focus:ring-violet-100"
+                />
+              </div>
+            </div>
+
             {error && (
               <div className="mt-5 animate-[fadeUp_250ms_ease-out] rounded-2xl border border-rose-100 bg-rose-50 px-5 py-4 text-sm font-medium text-rose-700">
                 {error}
@@ -174,7 +275,7 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <Loader2 className="h-5 w-5 animate-spin" />
-                  Sending code...
+                  Signing in...
                 </>
               ) : (
                 <>

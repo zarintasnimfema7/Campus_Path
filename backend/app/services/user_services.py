@@ -1,4 +1,6 @@
-from app.database.supabase import supabase
+from psycopg.rows import dict_row
+
+from app.database.neon import pool
 
 
 def ensure_user_exists(
@@ -6,32 +8,47 @@ def ensure_user_exists(
     email: str | None = None,
     name: str | None = None,
 ):
-    existing = (
-        supabase
-        .table("users")
-        .select("id")
-        .eq("id", user_id)
-        .execute()
-    )
+    """
+    Create the user if they do not exist.
+    Otherwise update available user information.
+    """
 
-    if existing.data:
-        return existing.data[0]
+    query = """
+        INSERT INTO users (
+            id,
+            email,
+            name
+        )
+        VALUES (%s, %s, %s)
 
-    payload = {
-        "id": user_id,
-    }
+        ON CONFLICT (id)
+        DO UPDATE SET
+            email = COALESCE(EXCLUDED.email, users.email),
+            name = COALESCE(EXCLUDED.name, users.name),
+            updated_at = NOW()
 
-    if email:
-        payload["email"] = email
+        RETURNING
+            id,
+            email,
+            name,
+            github_username,
+            created_at,
+            updated_at;
+    """
 
-    if name:
-        payload["name"] = name
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                query,
+                (
+                    user_id,
+                    email,
+                    name,
+                ),
+            )
 
-    result = (
-        supabase
-        .table("users")
-        .insert(payload)
-        .execute()
-    )
+            user = cursor.fetchone()
 
-    return result.data[0]
+        conn.commit()
+
+    return user
