@@ -1,5 +1,6 @@
 "use client";
-import {apiFetch} from "@/lib/api";
+import { useApiFetch } from "@/lib/api";
+import { useAuth } from "@clerk/nextjs";
 
 
 import {
@@ -21,12 +22,10 @@ import {
   X,
 } from "lucide-react";
 
-import { supabase } from "@/lib/supabase";
-
-
-
 export default function OnboardingPage() {
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
+  const apiFetch = useApiFetch();
 
   const [jobDescription, setJobDescription] = useState("");
   const [cvFile, setCvFile] = useState<File | null>(null);
@@ -39,12 +38,10 @@ export default function OnboardingPage() {
 
   // Protect page: user must be logged in
   useEffect(() => {
-    async function checkAuth() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    function checkAuth() {
+      if (!isLoaded) return;
 
-      if (!session) {
+      if (!isSignedIn) {
         router.replace("/login");
         return;
       }
@@ -53,7 +50,7 @@ export default function OnboardingPage() {
     }
 
     checkAuth();
-  }, [router]);
+  }, [isLoaded, isSignedIn, router]);
 
   function validateFile(file: File) {
     const allowedTypes = [
@@ -124,11 +121,7 @@ export default function OnboardingPage() {
     setError("");
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.user) {
+      if (!isSignedIn) {
         router.replace("/login");
         return;
       }
@@ -142,12 +135,6 @@ export default function OnboardingPage() {
        */
       formData.append("job_description", jobDescription);
       formData.append("cv", cvFile);
-
-      /*
-       * Use the authenticated Supabase UUID.
-       * Your backend workflow should use this as user_id.
-       */
-      
 
      const response = await apiFetch(
   "/workflow/start",
@@ -180,7 +167,7 @@ export default function OnboardingPage() {
 
       /*
        * Temporary frontend state.
-       * Later we can load this directly from Supabase.
+       * Later we can load this directly from persistent storage.
        */
       sessionStorage.setItem(
         "campuspath_workflow",

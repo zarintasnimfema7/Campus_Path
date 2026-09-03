@@ -15,8 +15,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-
-import { supabase } from "@/lib/supabase";
+import { useAuth, useClerk } from "@clerk/nextjs";
 
 type LearningTask = {
   title?: string;
@@ -53,18 +52,18 @@ type WorkflowData = {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
+  const { signOut } = useClerk();
 
   const [data, setData] = useState<WorkflowData | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const loadDashboard = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    const loadDashboard = () => {
+      if (!isLoaded) return;
 
-      if (!session) {
+      if (!isSignedIn) {
         router.replace("/register");
         return;
       }
@@ -88,10 +87,10 @@ export default function DashboardPage() {
     };
 
     loadDashboard();
-  }, [router]);
+  }, [isLoaded, isSignedIn, router]);
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
 
     sessionStorage.clear();
 

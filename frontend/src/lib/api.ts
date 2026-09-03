@@ -1,18 +1,21 @@
-import { supabase } from "@/lib/supabase";
+import { useAuth, useClerk } from "@clerk/nextjs";
+import { useCallback } from "react";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   "http://127.0.0.1:8000";
 
-export async function apiFetch(
-  path: string,
-  init: RequestInit = {}
-) {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+export function useApiFetch() {
+  const { getToken } = useAuth();
+  const { signOut } = useClerk();
 
-  if (!session?.access_token) {
+  return useCallback(async (
+    path: string,
+    init: RequestInit = {}
+  ) => {
+  const token = await getToken();
+
+  if (!token) {
     throw new Error("Authentication required.");
   }
 
@@ -20,7 +23,7 @@ export async function apiFetch(
 
   headers.set(
     "Authorization",
-    `Bearer ${session.access_token}`
+    `Bearer ${token}`
   );
 
   if (
@@ -43,7 +46,7 @@ export async function apiFetch(
   );
 
   if (response.status === 401) {
-    await supabase.auth.signOut();
+    await signOut();
 
     throw new Error(
       "Your session expired. Please sign in again."
@@ -51,4 +54,5 @@ export async function apiFetch(
   }
 
   return response;
+  }, [getToken, signOut]);
 }

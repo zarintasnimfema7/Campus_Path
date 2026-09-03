@@ -29,9 +29,8 @@ async def verify_github_evidence(
     current_user=Depends(get_current_user),
 ):
     try:
-        # The JWT has already been verified by get_current_user().
-        # current_user.id is now the authenticated Supabase user ID.
-        authenticated_user_id = current_user.id
+        # The JWT has already been verified by get_current_user()
+        authenticated_user_id = current_user["id"]
 
         return await verify_repository_evidence(
             repository_url=request.repository_url,

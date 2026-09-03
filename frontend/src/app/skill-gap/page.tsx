@@ -20,8 +20,7 @@ import {
 import { FaGithub } from "react-icons/fa";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-
-import { supabase } from "@/lib/supabase";
+import { useAuth, useClerk } from "@clerk/nextjs";
 
 type WorkflowData = {
   job?: {
@@ -42,6 +41,8 @@ type WorkflowData = {
 
 export default function SkillGapPage() {
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
+  const { signOut } = useClerk();
 
   const [workflow, setWorkflow] =
     useState<WorkflowData | null>(null);
@@ -50,12 +51,10 @@ export default function SkillGapPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    async function loadPage() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    function loadPage() {
+      if (!isLoaded) return;
 
-      if (!session) {
+      if (!isSignedIn) {
         router.replace("/login");
         return;
       }
@@ -79,10 +78,10 @@ export default function SkillGapPage() {
     }
 
     loadPage();
-  }, [router]);
+  }, [isLoaded, isSignedIn, router]);
 
   async function logout() {
-    await supabase.auth.signOut();
+    await signOut();
     sessionStorage.clear();
     router.replace("/login");
   }

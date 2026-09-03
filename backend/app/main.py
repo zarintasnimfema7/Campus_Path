@@ -23,7 +23,7 @@ from app.routes.replanner import (
     router as replanner_router,
 )
 
-from app.database.supabase import supabase
+from app.database.neon import test_database_connection
 
 from app.routes.persistence import (
     router as persistence_router,
@@ -97,17 +97,11 @@ def health():
 def database_health():
 
     try:
-        (
-            supabase
-            .table("users")
-            .select("id")
-            .limit(1)
-            .execute()
-        )
+        test_database_connection()
 
         return {
             "status": "ok",
-            "database": "Supabase PostgreSQL",
+            "database": "Neon PostgreSQL",
             "connected": True,
         }
 

@@ -34,6 +34,7 @@ Replan Remaining Tasks
 - TypeScript
 - Tailwind CSS
 - shadcn/ui
+- Clerk authentication
 
 ### Backend
 
@@ -41,7 +42,7 @@ Replan Remaining Tasks
 - FastAPI
 - Google ADK
 - Gemini
-- Supabase PostgreSQL
+- Neon PostgreSQL
 
 ### Other Services
 
@@ -93,7 +94,7 @@ The following features are currently working:
 - Evidence scoring
 - Readiness update
 - Automatic replanning
-- Supabase PostgreSQL persistence
+- Neon PostgreSQL persistence
 - Full initial workflow orchestration
 
 The initial workflow is:
@@ -117,7 +118,7 @@ Calculate Readiness
    ↓
 Generate Plan
    ↓
-Save Results to Supabase
+Save Results to Neon
 ```
 
 ---
@@ -181,30 +182,31 @@ Required variables:
 APP_ENV=development
 FRONTEND_URL=http://localhost:3000
 
-GOOGLE_API_KEY=
+GEMINI_API_KEY=
 GOOGLE_GENAI_USE_VERTEXAI=FALSE
 
 GITHUB_TOKEN=
 
-SUPABASE_URL=
-SUPABASE_KEY=
+DATABASE_URL=
+CLERK_SECRET_KEY=
+CLERK_AUTHORIZED_PARTIES=http://localhost:3000
 ```
 
 Get the actual development `.env` securely from the project owner.
 
 Never commit `.env` to GitHub.
 
-The Supabase backend secret/service-role key must never be exposed in frontend code.
+Database credentials and backend Clerk secrets must never be exposed in frontend code.
 
 ---
 
 # Database
 
-The project uses an existing Supabase PostgreSQL database.
+The project uses an existing Neon PostgreSQL database through the backend connection pool.
 
 If you are joining the existing CampusPath development environment, you do **not** need to:
 
-- create another Supabase project
+- create another Neon project
 - recreate the tables
 - rerun the database schema
 
@@ -265,12 +267,12 @@ Expected database response:
 ```json
 {
   "status": "ok",
-  "database": "Supabase PostgreSQL",
+  "database": "Neon PostgreSQL",
   "connected": true
 }
 ```
 
-If both work, the backend and Supabase connection are ready.
+If both work, the backend and Neon connection are ready.
 
 ---
 
@@ -372,7 +374,7 @@ npm run dev
 
 # Database Tables
 
-Current Supabase tables include:
+Current Neon PostgreSQL tables include:
 
 ```text
 users
@@ -507,7 +509,7 @@ Do not create additional feature branches unless the team explicitly decides oth
 ## Completed
 
 Backend agent pipeline  
-Supabase database integration  
+Neon database integration  
 Persistence layer  
 Initial workflow orchestration  
 GitHub evidence verification  
@@ -543,8 +545,9 @@ frontend/.next/
 Never expose these in frontend code:
 
 ```text
-SUPABASE_KEY
-GOOGLE_API_KEY
+DATABASE_URL
+CLERK_SECRET_KEY
+GEMINI_API_KEY
 GITHUB_TOKEN
 ```
 
