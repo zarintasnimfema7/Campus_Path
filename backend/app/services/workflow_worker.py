@@ -2,23 +2,40 @@
 
 import asyncio
 import logging
+import os
 
 from app.models.workflow import WorkflowResult
 from app.services.storage import download_cv
 from app.services.workflow_jobs import (
     claim_workflow_job,
     mark_workflow_job_completed,
-    mark_workflow_job_failed,
+    record_workflow_job_failure,
+    get_workflow_job_delivery_state,
 )
 
 logger = logging.getLogger(__name__)
 
 
+def workflow_max_retries() -> int:
+    """Total processing-attempt cap, including the initial attempt."""
+    try:
+        value = int(os.environ.get('WORKFLOW_MAX_RETRIES', '5'))
+        return value if value > 0 else 5
+    except ValueError:
+        return 5
+
+
 def process_workflow_job(job_id: str) -> WorkflowResult | None:
     """Claim first, then process trusted DB inputs outside the claim transaction."""
+    max_retries = workflow_max_retries()
     job = claim_workflow_job(job_id)
     if job is None:
-        return None
+        state = get_workflow_job_delivery_state(job_id)
+        if state is None or state['status'] == 'completed':
+            return None
+        # Do not ACK concurrent processing, a requeue race, or a terminal failed
+        # message that still needs unsuccessful deliveries for DLQ forwarding.
+        raise RuntimeError('Workflow delivery is not ready to be acknowledged.')
     try:
         object_path = job.get('cv_object_path')
         if not object_path:
@@ -35,7 +52,7 @@ def process_workflow_job(job_id: str) -> WorkflowResult | None:
         ))
     except Exception:
         try:
-            if not mark_workflow_job_failed(job_id, 'Workflow processing failed.'):
+            if not record_workflow_job_failure(job_id, 'Workflow processing failed.', max_retries):
                 logger.error('Workflow failure state was not updated for job %s.', job_id)
         except Exception as update_error:
             logger.error('Workflow failure state update failed (%s).', type(update_error).__name__)

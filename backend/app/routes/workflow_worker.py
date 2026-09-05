@@ -2,7 +2,7 @@
 
 Google service-to-service authentication must be enforced during deployment.
 No Clerk dependency: this endpoint is not intended for end-user access.
-Retry/recovery policy is deferred to the later reliability step.
+Pub/Sub redelivery and DLQ deployment settings are documented in docs/pubsub.md.
 """
 
 import base64
@@ -37,6 +37,7 @@ def _job_id_from_envelope(envelope: dict) -> str:
 
 @router.post('/process', status_code=204, response_class=Response)
 def process_message(envelope: dict = Body(...)):
+    # Optional deliveryAttempt metadata is accepted but never drives DB retries.
     # FastAPI runs this sync handler in a thread pool, including the AI workflow.
     job_id = _job_id_from_envelope(envelope)
     try:

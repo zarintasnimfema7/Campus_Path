@@ -9,6 +9,37 @@ from fastapi.encoders import jsonable_encoder
 from app.database.neon import pool
 
 
+def get_workflow_job_delivery_state(job_id: str) -> dict[str, Any] | None:
+    """Internal lookup after a failed claim; never used to acquire ownership."""
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute('SELECT status, retry_count FROM workflow_jobs WHERE id = %s', (job_id,))
+            return cursor.fetchone()
+
+
+def record_workflow_job_failure(job_id: str, safe_error: str, max_retries: int) -> dict[str, Any] | None:
+    """Atomically record a processing failure and requeue within the attempt cap."""
+    if max_retries < 1:
+        raise ValueError('Workflow attempt limit must be positive.')
+    query = """
+        UPDATE workflow_jobs
+        SET retry_count = retry_count + 1,
+            status = CASE WHEN retry_count + 1 >= %s THEN 'failed' ELSE 'queued' END,
+            error = %s,
+            updated_at = NOW(),
+            completed_at = CASE WHEN retry_count + 1 >= %s THEN NOW() ELSE NULL END,
+            started_at = CASE WHEN retry_count + 1 >= %s THEN started_at ELSE NULL END
+        WHERE id = %s AND status = 'processing'
+        RETURNING id, status, retry_count
+    """
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(query, (max_retries, 'Workflow processing failed.', max_retries, max_retries, job_id))
+            updated = cursor.fetchone()
+        conn.commit()
+    return updated
+
+
 def get_workflow_job_for_user(job_id: str, user_id: str) -> dict[str, Any] | None:
     """Read only the polling fields for a job owned by the verified user."""
     query = """
