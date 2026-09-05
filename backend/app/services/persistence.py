@@ -1,10 +1,10 @@
-from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app.database.neon import pool
+from app.services.ownership import require_job_owner, require_task_owner
 
 from app.models.cv import CVAnalysisResult
 from app.models.evidence import EvidenceVerificationResult
@@ -23,11 +23,11 @@ def as_json(value):
 # =====================================================
 
 def create_user(
+    user_id: str,
     name: str,
-    email: str,
+    email: str | None,
     github_username: str | None = None,
 ):
-    user_id = str(uuid4())
 
     query = """
         INSERT INTO users (
@@ -38,7 +38,7 @@ def create_user(
         )
         VALUES (%s, %s, %s, %s)
 
-        ON CONFLICT (email)
+        ON CONFLICT (id)
         DO UPDATE SET
             name = EXCLUDED.name,
             github_username = COALESCE(
@@ -240,6 +240,7 @@ def save_skill_gap(
 
     with pool.connection() as conn:
         with conn.cursor() as cursor:
+            require_job_owner(cursor, job_target_id, user_id)
 
             if rows:
                 cursor.executemany(
@@ -329,6 +330,7 @@ def save_learning_plan(
 
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
+            require_job_owner(cursor, job_target_id, user_id)
 
             cursor.execute(
                 plan_query,
@@ -380,6 +382,7 @@ def save_learning_plan(
 def save_evidence(
     task_id: str,
     verification: EvidenceVerificationResult,
+    *, user_id: str,
 ):
     evidence_query = """
         INSERT INTO evidence (
@@ -408,7 +411,7 @@ def save_evidence(
         SET
             status = %s,
             updated_at = NOW()
-        WHERE id = %s;
+        WHERE id = %s AND plan_id IN (SELECT id FROM plans WHERE user_id = %s);
     """
 
     if verification.overall_status == "verified":
@@ -418,6 +421,7 @@ def save_evidence(
 
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
+            require_task_owner(cursor, task_id, user_id)
 
             cursor.execute(
                 evidence_query,
@@ -438,6 +442,7 @@ def save_evidence(
                 (
                     task_status,
                     task_id,
+                    user_id,
                 ),
             )
 

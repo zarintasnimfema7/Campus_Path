@@ -26,7 +26,7 @@ class WorkflowStartTests(unittest.TestCase):
         self.addCleanup(self.app.dependency_overrides.clear)
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
-        for name in ('upload_cv', 'ensure_user_exists', 'create_workflow_job', 'delete_cv', 'publish_workflow_job', 'delete_workflow_job'):
+        for name in ('upload_cv', 'ensure_user_exists', 'create_workflow_job', 'delete_cv', 'publish_workflow_job', 'delete_workflow_job', 'reserve_workflow_start', 'log_access_event'):
             patcher = patch.object(self.route, name)
             setattr(self, name, patcher.start())
             self.addCleanup(patcher.stop)

@@ -1,3 +1,5 @@
+from fastapi import Depends
+from app.auth.dependencies import get_current_user
 from fastapi import (
     APIRouter,
     HTTPException,
@@ -25,6 +27,7 @@ router = APIRouter(
 )
 async def analyze_gap(
     request: SkillGapRequest,
+    current_user=Depends(get_current_user),
 ):
 
     try:
@@ -40,8 +43,5 @@ async def analyze_gap(
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                f"Skill gap analysis failed: "
-                f"{str(error)}"
-            ),
+            detail="Analysis is temporarily unavailable.",
         )

@@ -61,8 +61,6 @@ app.add_middleware(
 
 
 app.include_router(jobs_router)
-
-app.include_router(jobs_router)
 app.include_router(cv_router)
 
 app.include_router(skill_gap_router)
@@ -113,5 +111,5 @@ def database_health():
         return {
             "status": "error",
             "connected": False,
-            "detail": str(error),
+            "detail": "Database is temporarily unavailable.",
         }

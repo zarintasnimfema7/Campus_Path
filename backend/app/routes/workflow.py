@@ -1,3 +1,5 @@
+from app.services.workflow_rate_limit import reserve_workflow_start
+from app.services.access_logs import log_access_event
 import logging
 from uuid import UUID, uuid4
 
@@ -47,6 +49,12 @@ def start_workflow(
     if not job_description:
         raise HTTPException(status_code=400, detail="Job description is required.")
     target_role = (target_role.strip() or None) if target_role is not None else None
+    try:
+        allowed = reserve_workflow_start(user_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Analysis requests are temporarily unavailable.") from None
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Too many analysis requests. Please try again later.")
     job_id = str(uuid4())
 
     try:
@@ -96,4 +104,5 @@ def start_workflow(
             logger.error("CV cleanup failed (%s).", type(cleanup_error).__name__)
         raise HTTPException(status_code=503, detail="Could not publish workflow job. Please try again.") from error
 
+    log_access_event(user_id, "workflow_start_accepted", "workflow", job_id)
     return WorkflowQueuedResponse(job_id=job_id, status="queued")
