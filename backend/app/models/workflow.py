@@ -1,9 +1,17 @@
+from typing import Literal
+from uuid import UUID
+
 from pydantic import BaseModel
 
 from app.models.cv import CVAnalysisResult
 from app.models.job import JobAnalysisResult
 from app.models.plan import LearningPlan
 from app.models.skill_gap import SkillGapResult
+
+
+class WorkflowQueuedResponse(BaseModel):
+    job_id: UUID
+    status: Literal['queued'] = 'queued'
 
 
 class WorkflowResult(BaseModel):
