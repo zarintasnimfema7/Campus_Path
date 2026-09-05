@@ -26,7 +26,7 @@ class WorkflowStartTests(unittest.TestCase):
         self.addCleanup(self.app.dependency_overrides.clear)
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
-        for name in ('upload_cv', 'ensure_user_exists', 'create_workflow_job', 'delete_cv'):
+        for name in ('upload_cv', 'ensure_user_exists', 'create_workflow_job', 'delete_cv', 'publish_workflow_job', 'delete_workflow_job'):
             patcher = patch.object(self.route, name)
             setattr(self, name, patcher.start())
             self.addCleanup(patcher.stop)
@@ -53,6 +53,8 @@ class WorkflowStartTests(unittest.TestCase):
             target_role=None, cv_object_path=f"cv/user_verified/{body['job_id']}/resume.pdf",
         )
         self.delete_cv.assert_not_called()
+        self.publish_workflow_job.assert_called_once_with(body['job_id'])
+        self.delete_workflow_job.assert_not_called()
 
     def test_target_role(self):
         for supplied, expected in [('  Engineer  ', 'Engineer'), ('  ', None)]:
@@ -117,13 +119,65 @@ class WorkflowStartTests(unittest.TestCase):
         self.upload_cv.assert_not_called()
         self.create_workflow_job.assert_not_called()
 
-    def test_route_has_no_ai_or_publisher_dependency(self):
+    def test_route_has_no_ai_execution(self):
         source = Path(self.route.__file__).read_text()
         self.assertNotIn('run_initial_workflow', source)
-        self.assertNotIn('pubsub', source.lower())
-        self.assertNotIn('publisher', source.lower())
         workflow_source = Path(self.route.__file__).parents[1] / 'services' / 'workflow.py'
         self.assertIn('async def run_initial_workflow(', workflow_source.read_text())
+
+    def test_publish_runs_after_insert(self):
+        def publish(job_id):
+            self.create_workflow_job.assert_called_once()
+            self.assertEqual(self.create_workflow_job.call_args.kwargs['job_id'], job_id)
+            return 'internal-message-id'
+        self.publish_workflow_job.side_effect = publish
+        response = self.post()
+        self.assertEqual(response.status_code, 202)
+        self.assertNotIn('internal-message-id', response.text)
+
+    def test_publish_failure_compensation(self):
+        for row_fails, cv_fails in ((False, False), (True, False), (False, True), (True, True)):
+            with self.subTest(row_fails=row_fails, cv_fails=cv_fails):
+                self.delete_workflow_job.reset_mock()
+                self.delete_cv.reset_mock()
+                self.publish_workflow_job.side_effect = RuntimeError('secret publish credentials')
+                self.delete_workflow_job.side_effect = ValueError('secret DB') if row_fails else None
+                self.delete_cv.side_effect = ValueError('secret GCS') if cv_fails else None
+                with self.assertLogs(self.route.logger, level='ERROR') as logs:
+                    response = self.post()
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.json()['detail'], 'Could not publish workflow job. Please try again.')
+                job = self.create_workflow_job.call_args.kwargs
+                self.delete_workflow_job.assert_called_once_with(job['job_id'], 'user_verified')
+                self.delete_cv.assert_called_once_with(job['cv_object_path'])
+                self.assertNotIn('secret', response.text + str(logs.output))
+                self.assertIn('Workflow publish failed', logs.output[0])
+
+    def test_original_publish_exception_preserved(self):
+        error = RuntimeError('publish failed')
+        self.publish_workflow_job.side_effect = error
+        self.delete_workflow_job.side_effect = ValueError('cleanup failed')
+        self.delete_cv.side_effect = ValueError('cleanup failed')
+        with self.assertLogs(self.route.logger, level='ERROR'), self.assertRaises(HTTPException) as caught:
+            self.route.start_workflow(job_description='JD', cv=Mock(), target_role=None, current_user={'id': 'user_verified'})
+        self.assertIs(caught.exception.__cause__, error)
+
+    def test_no_publish_after_database_failure(self):
+        self.create_workflow_job.side_effect = RuntimeError('DB failed')
+        with self.assertLogs(self.route.logger, level='ERROR'):
+            self.assertEqual(self.post().status_code, 503)
+        self.publish_workflow_job.assert_not_called()
+
+    def test_parameterized_database_delete(self):
+        service = importlib.import_module('app.services.workflow_jobs')
+        with patch.object(service, 'pool') as pool:
+            conn = pool.connection.return_value.__enter__.return_value
+            cursor = conn.cursor.return_value.__enter__.return_value
+            service.delete_workflow_job('job', 'user')
+            cursor.execute.assert_called_once_with(
+                'DELETE FROM workflow_jobs WHERE id = %s AND user_id = %s', ('job', 'user'),
+            )
+            conn.commit.assert_called_once()
 
     def test_parameterized_database_insert(self):
         service = importlib.import_module('app.services.workflow_jobs')

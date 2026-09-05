@@ -7,7 +7,8 @@ from app.auth.dependencies import get_current_user
 from app.models.workflow import WorkflowQueuedResponse
 from app.services.storage import delete_cv, upload_cv
 from app.services.user_services import ensure_user_exists
-from app.services.workflow_jobs import create_workflow_job
+from app.services.workflow_jobs import create_workflow_job, delete_workflow_job
+from app.services.pubsub import publish_workflow_job
 
 
 logger = logging.getLogger(__name__)
@@ -61,5 +62,19 @@ def start_workflow(
         except Exception as cleanup_error:
             logger.error("CV cleanup failed (%s).", type(cleanup_error).__name__)
         raise HTTPException(status_code=503, detail="Could not create workflow job. Please try again.") from error
+
+    try:
+        publish_workflow_job(job_id)
+    except Exception as error:
+        logger.error("Workflow publish failed for job %s (%s).", job_id, type(error).__name__)
+        try:
+            delete_workflow_job(job_id, user_id)
+        except Exception as cleanup_error:
+            logger.error("Workflow job cleanup failed (%s).", type(cleanup_error).__name__)
+        try:
+            delete_cv(cv_object_path)
+        except Exception as cleanup_error:
+            logger.error("CV cleanup failed (%s).", type(cleanup_error).__name__)
+        raise HTTPException(status_code=503, detail="Could not publish workflow job. Please try again.") from error
 
     return WorkflowQueuedResponse(job_id=job_id, status="queued")

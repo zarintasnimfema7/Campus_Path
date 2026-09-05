@@ -3,6 +3,17 @@
 from app.database.neon import pool
 
 
+def delete_workflow_job(job_id: str, user_id: str) -> None:
+    """Compensate a failed publish, scoped to this job and authenticated user."""
+    with pool.connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                'DELETE FROM workflow_jobs WHERE id = %s AND user_id = %s',
+                (job_id, user_id),
+            )
+        conn.commit()
+
+
 def create_workflow_job(
     job_id: str,
     user_id: str,
