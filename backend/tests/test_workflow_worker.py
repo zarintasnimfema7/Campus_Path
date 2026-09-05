@@ -26,7 +26,7 @@ class WorkflowWorkerTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(self.app)
         self.addCleanup(self.client.close)
-        for name in ('claim_workflow_job', 'download_cv'):
+        for name in ('claim_workflow_job', 'download_cv', 'mark_workflow_job_completed', 'mark_workflow_job_failed'):
             patcher = patch.object(self.worker, name)
             setattr(self, name, patcher.start())
             self.addCleanup(patcher.stop)
@@ -74,6 +74,8 @@ class WorkflowWorkerTests(unittest.TestCase):
             user_id='user_trusted', job_description='trusted JD',
             cv_filename='resume.pdf', cv_bytes=b'private CV',
         )
+        self.mark_workflow_job_completed.assert_called_once_with(self.job_id, self.workflow.return_value)
+        self.mark_workflow_job_failed.assert_not_called()
 
     def test_internal_result_returned(self):
         self.assertEqual(self.worker.process_workflow_job(self.job_id), {'result': 'internal only'})
@@ -83,6 +85,8 @@ class WorkflowWorkerTests(unittest.TestCase):
         self.assertEqual(self.post().status_code, 204)
         self.download_cv.assert_not_called()
         self.workflow.assert_not_called()
+        self.mark_workflow_job_completed.assert_not_called()
+        self.mark_workflow_job_failed.assert_not_called()
 
     def test_duplicate_delivery_runs_once(self):
         self.claim_workflow_job.side_effect = [self.job, None]
@@ -90,6 +94,7 @@ class WorkflowWorkerTests(unittest.TestCase):
         self.assertEqual(self.post().status_code, 204)
         self.download_cv.assert_called_once()
         self.workflow.assert_awaited_once()
+        self.mark_workflow_job_completed.assert_called_once()
 
     def test_malformed_messages_rejected_before_claim(self):
         bad_envelopes = [
@@ -107,6 +112,8 @@ class WorkflowWorkerTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(response.json()['detail'], 'Invalid Pub/Sub workflow message.')
         self.claim_workflow_job.assert_not_called()
+        self.mark_workflow_job_completed.assert_not_called()
+        self.mark_workflow_job_failed.assert_not_called()
         self.download_cv.assert_not_called()
         self.workflow.assert_not_called()
 
@@ -127,6 +134,39 @@ class WorkflowWorkerTests(unittest.TestCase):
                 self.assertEqual(response.json()['detail'], 'Workflow processing failed.')
                 self.assertNotIn('secret', response.text + str(logs.output))
                 operation.side_effect = None
+
+    def test_processing_failure_records_safe_error(self):
+        for operation in (self.download_cv, self.workflow):
+            with self.subTest(operation=operation):
+                self.mark_workflow_job_failed.reset_mock()
+                operation.side_effect = RuntimeError('secret CV credentials')
+                with self.assertLogs(self.route.logger, level='ERROR'):
+                    self.assertEqual(self.post().status_code, 500)
+                self.mark_workflow_job_failed.assert_called_once_with(self.job_id, 'Workflow processing failed.')
+                self.mark_workflow_job_completed.assert_not_called()
+                operation.side_effect = None
+
+    def test_failed_update_preserves_original_error(self):
+        original = RuntimeError('original processing failure')
+        self.workflow.side_effect = original
+        for outcome in (False, RuntimeError('secret DB credentials')):
+            self.mark_workflow_job_failed.side_effect = outcome if isinstance(outcome, Exception) else None
+            self.mark_workflow_job_failed.return_value = False
+            with self.assertLogs(self.worker.logger, level='ERROR') as logs:
+                with self.assertRaises(RuntimeError) as caught:
+                    self.worker.process_workflow_job(self.job_id)
+            self.assertIs(caught.exception, original)
+            self.assertNotIn('secret', str(logs.output))
+
+    def test_completion_update_failure_returns_500_without_retry(self):
+        for outcome in (False, RuntimeError('secret DB credentials')):
+            self.workflow.reset_mock()
+            self.mark_workflow_job_completed.side_effect = outcome if isinstance(outcome, Exception) else None
+            self.mark_workflow_job_completed.return_value = False
+            with self.assertLogs(self.route.logger, level='ERROR'):
+                self.assertEqual(self.post().status_code, 500)
+            self.workflow.assert_awaited_once()
+            self.mark_workflow_job_failed.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -3,8 +3,45 @@
 from typing import Any
 
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
+from fastapi.encoders import jsonable_encoder
 
 from app.database.neon import pool
+
+
+def mark_workflow_job_completed(job_id: str, result: Any) -> bool:
+    """Persist the existing workflow result only while the job is processing."""
+    query = """
+        UPDATE workflow_jobs
+        SET status = 'completed', result = %s, error = NULL,
+            completed_at = NOW(), updated_at = NOW()
+        WHERE id = %s AND status = 'processing'
+        RETURNING id, status
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (Jsonb(jsonable_encoder(result)), job_id))
+            updated = cursor.fetchone()
+        conn.commit()
+    return updated is not None
+
+
+def mark_workflow_job_failed(job_id: str, error: str) -> bool:
+    """Store a fixed safe description rather than arbitrary exception details."""
+    safe_error = 'Workflow processing failed.'
+    query = """
+        UPDATE workflow_jobs
+        SET status = 'failed', error = %s,
+            updated_at = NOW(), completed_at = NOW()
+        WHERE id = %s AND status = 'processing'
+        RETURNING id, status
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (safe_error, job_id))
+            updated = cursor.fetchone()
+        conn.commit()
+    return updated is not None
 
 
 def claim_workflow_job(job_id: str) -> dict[str, Any] | None:

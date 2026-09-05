@@ -2,7 +2,7 @@
 
 Google service-to-service authentication must be enforced during deployment.
 No Clerk dependency: this endpoint is not intended for end-user access.
-Do not enable live push delivery before job finalization is implemented.
+Retry/recovery policy is deferred to the later reliability step.
 """
 
 import base64
