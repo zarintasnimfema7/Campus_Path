@@ -83,7 +83,7 @@ def start_workflow(
         raise HTTPException(status_code=503, detail="Could not create workflow job. Please try again.") from error
 
     try:
-        publish_workflow_job(job_id)
+        publish_workflow_job(job_id=job_id, ordering_key=user_id)
     except Exception as error:
         logger.error("Workflow publish failed for job %s (%s).", job_id, type(error).__name__)
         try:

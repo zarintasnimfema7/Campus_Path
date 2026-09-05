@@ -53,7 +53,7 @@ class WorkflowStartTests(unittest.TestCase):
             target_role=None, cv_object_path=f"cv/user_verified/{body['job_id']}/resume.pdf",
         )
         self.delete_cv.assert_not_called()
-        self.publish_workflow_job.assert_called_once_with(body['job_id'])
+        self.publish_workflow_job.assert_called_once_with(job_id=body['job_id'], ordering_key='user_verified')
         self.delete_workflow_job.assert_not_called()
 
     def test_target_role(self):
@@ -62,6 +62,18 @@ class WorkflowStartTests(unittest.TestCase):
                 response = self.post({'job_description': 'JD', 'target_role': supplied})
                 self.assertEqual(response.status_code, 202)
                 self.assertEqual(self.create_workflow_job.call_args.kwargs['target_role'], expected)
+
+    def test_ordering_identity_cannot_be_overridden(self):
+        response = self.client.post(
+            '/workflow/start?ordering_key=attacker&user_id=attacker',
+            data={'job_description': 'JD', 'ordering_key': 'attacker', 'user_id': 'attacker'},
+            headers={'ordering_key': 'attacker', 'user_id': 'attacker'},
+            files={'cv': ('resume.pdf', b'cv', 'application/pdf')},
+        )
+        self.assertEqual(response.status_code, 202)
+        self.publish_workflow_job.assert_called_once_with(
+            job_id=response.json()['job_id'], ordering_key='user_verified',
+        )
 
     def test_real_storage_validation(self):
         from app.services import storage
@@ -126,7 +138,7 @@ class WorkflowStartTests(unittest.TestCase):
         self.assertIn('async def run_initial_workflow(', workflow_source.read_text())
 
     def test_publish_runs_after_insert(self):
-        def publish(job_id):
+        def publish(job_id, ordering_key):
             self.create_workflow_job.assert_called_once()
             self.assertEqual(self.create_workflow_job.call_args.kwargs['job_id'], job_id)
             return 'internal-message-id'

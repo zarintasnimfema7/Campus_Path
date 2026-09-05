@@ -11,7 +11,7 @@ After an unsuccessful atomic claim, a read-only lookup determines acknowledgment
 missing/completed return 204; queued/processing/failed return 500 without AI work.
 The lookup does not acquire ownership. Optional deliveryAttempt is accepted and
 ignored; only the atomic database counter controls application attempts.
-No application retry loops, manual republishing, or ordering are implemented.
+No application retry loops or manual republishing are implemented.
 
 ## Planned resources
 
@@ -48,7 +48,7 @@ Do not expose the internal route through an unauthenticated public service.
 gcloud pubsub topics create <MAIN_TOPIC> --project=<PROJECT_ID>
 gcloud pubsub topics create <DLQ_TOPIC> --project=<PROJECT_ID>
 gcloud pubsub subscriptions create <DLQ_SUBSCRIPTION> --topic=<DLQ_TOPIC> --project=<PROJECT_ID>
-gcloud pubsub subscriptions create <SOURCE_SUBSCRIPTION> --project=<PROJECT_ID> --topic=<MAIN_TOPIC> --push-endpoint=<WORKER_BASE_URL>/internal/workflow-jobs/process --push-auth-service-account=<PUSH_SERVICE_ACCOUNT_EMAIL> --push-auth-token-audience=<WORKER_BASE_URL> --dead-letter-topic=projects/<PROJECT_ID>/topics/<DLQ_TOPIC> --max-delivery-attempts=5 --ack-deadline=600 --min-retry-delay=10s --max-retry-delay=60s
+gcloud pubsub subscriptions create <SOURCE_SUBSCRIPTION> --project=<PROJECT_ID> --topic=<MAIN_TOPIC> --push-endpoint=<WORKER_BASE_URL>/internal/workflow-jobs/process --push-auth-service-account=<PUSH_SERVICE_ACCOUNT_EMAIL> --push-auth-token-audience=<WORKER_BASE_URL> --dead-letter-topic=projects/<PROJECT_ID>/topics/<DLQ_TOPIC> --enable-message-ordering --max-delivery-attempts=5 --ack-deadline=600 --min-retry-delay=10s --max-retry-delay=60s
 ```
 
 Required IAM must be configured separately. The Pub/Sub service agent needs
@@ -73,3 +73,39 @@ deliveries return non-2xx and may reach the DLQ; there is no automatic stale-cla
 recovery here. Investigate DB state before any manual recovery. Existing workflow
 persistence may have partially succeeded before an exception; retrying the whole
 workflow is not an exactly-once guarantee for those detailed entities.
+
+## Per-user ordering (Step 11)
+
+Both sides must enable ordering: the reusable Python publisher uses official
+`PublisherOptions(enable_message_ordering=True)`, and the SOURCE subscription
+must be created with `--enable-message-ordering` (included above). There is no
+separate topic-level ordering switch. An existing subscription cannot have its
+ordering property changed; plan a separately named replacement and a controlled
+cutover during deployment, without deleting outstanding messages here.
+
+The publisher passes the verified Clerk user ID as `ordering_key` metadata.
+JSON remains exactly `{"job_id": "<uuid>"}`. The worker continues trusting Neon
+for user identity. No key is accepted from client form/query/header fields.
+
+Same-key messages follow Pub/Sub's regional publish order; different keys can
+progress concurrently without a global user lock. Publish all messages for a key
+in the same region. Keep publishers colocated in the chosen region; multi-region
+publishing requires a deliberate locational-endpoint configuration at deployment.
+Ordering is publish order, not job creation time or HTTP request arrival order;
+concurrent publishers do not establish an independent business ordering.
+
+Retries can delay later jobs for the same user until acknowledgment or eventual
+DLQ forwarding. Other user keys can progress independently. Keep the atomic DB
+claim: ordering does not eliminate duplicates. DLQ forwarding is best-effort and
+ordering across dead-letter forwarding is not guaranteed. Do not treat this as
+an exactly-once execution guarantee or a strict database-level per-user lock.
+
+An unrecoverable ordered publish error can pause a key in the Python client;
+operations should investigate and use the supported publisher resume mechanism
+when safe. This step preserves the existing 503 and DB/GCS compensation behavior
+and adds no automatic resume or republish workaround.
+
+See [Google message ordering](https://docs.cloud.google.com/pubsub/docs/ordering)
+and [publisher configuration](https://docs.cloud.google.com/pubsub/docs/publisher).
+Unit tests verify configuration and keys, not actual remote delivery order.
+All example commands remain documentation only; no resources were changed.
