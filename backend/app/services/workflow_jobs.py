@@ -9,6 +9,20 @@ from fastapi.encoders import jsonable_encoder
 from app.database.neon import pool
 
 
+def get_workflow_job_for_user(job_id: str, user_id: str) -> dict[str, Any] | None:
+    """Read only the polling fields for a job owned by the verified user."""
+    query = """
+        SELECT id, status, result, error, retry_count,
+               created_at, updated_at, started_at, completed_at
+        FROM workflow_jobs
+        WHERE id = %s AND user_id = %s
+    """
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(query, (job_id, user_id))
+            return cursor.fetchone()
+
+
 def mark_workflow_job_completed(job_id: str, result: Any) -> bool:
     """Persist the existing workflow result only while the job is processing."""
     query = """

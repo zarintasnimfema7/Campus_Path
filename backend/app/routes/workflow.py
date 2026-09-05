@@ -1,18 +1,37 @@
 import logging
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.auth.dependencies import get_current_user
-from app.models.workflow import WorkflowQueuedResponse
+from app.models.workflow import WorkflowQueuedResponse, WorkflowStatusResponse
 from app.services.storage import delete_cv, upload_cv
 from app.services.user_services import ensure_user_exists
 from app.services.workflow_jobs import create_workflow_job, delete_workflow_job
 from app.services.pubsub import publish_workflow_job
+from app.services.workflow_jobs import get_workflow_job_for_user
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/workflow", tags=["Workflow"])
+
+
+@router.get('/{job_id}', response_model=WorkflowStatusResponse)
+def get_workflow_status(job_id: UUID, current_user=Depends(get_current_user)):
+    try:
+        job = get_workflow_job_for_user(str(job_id), current_user['id'])
+    except Exception as error:
+        logger.error('Workflow status lookup failed (%s).', type(error).__name__)
+        raise HTTPException(status_code=503, detail='Workflow status is temporarily unavailable.') from None
+    if job is None:
+        raise HTTPException(status_code=404, detail='Workflow job not found.')
+    return WorkflowStatusResponse(
+        job_id=job['id'], status=job['status'], retry_count=job['retry_count'],
+        result=job['result'] if job['status'] == 'completed' else None,
+        error='Workflow processing failed.' if job['status'] == 'failed' else None,
+        created_at=job['created_at'], updated_at=job['updated_at'],
+        started_at=job['started_at'], completed_at=job['completed_at'],
+    )
 
 
 @router.post("/start", response_model=WorkflowQueuedResponse, status_code=202)
