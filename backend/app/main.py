@@ -33,6 +33,8 @@ from app.routes.workflow import (
     router as workflow_router,
 )
 
+from app.routes.workflow_worker import router as workflow_worker_router
+
 load_dotenv()
 
 
@@ -73,6 +75,7 @@ app.include_router(replanner_router)
 
 app.include_router(persistence_router)
 app.include_router(workflow_router)
+app.include_router(workflow_worker_router)
 
 
 @app.get("/")
