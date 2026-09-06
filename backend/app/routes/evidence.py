@@ -1,3 +1,6 @@
+from app.services.access_logs import log_access_event
+from app.services.ownership import get_task_for_user
+from starlette.concurrency import run_in_threadpool
 from fastapi import (
     APIRouter,
     Depends,
@@ -31,16 +34,21 @@ async def verify_github_evidence(
     try:
         # The JWT has already been verified by get_current_user()
         authenticated_user_id = current_user["id"]
+        task = request.task
+        if request.task_id is not None:
+            task = await run_in_threadpool(get_task_for_user, request.task_id, authenticated_user_id)
 
-        return await verify_repository_evidence(
+        result = await verify_repository_evidence(
             repository_url=request.repository_url,
-            task=request.task,
+            task=task,
         )
+        await run_in_threadpool(log_access_event, authenticated_user_id, "evidence_verified", "task", request.task_id)
+        return result
 
     except ValueError as error:
         raise HTTPException(
             status_code=400,
-            detail=str(error),
+            detail="The supplied analysis input is invalid.",
         )
 
     except HTTPException:
@@ -49,8 +57,5 @@ async def verify_github_evidence(
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Evidence verification failed: "
-                f"{str(error)}"
-            ),
+            detail="Analysis is temporarily unavailable.",
         )

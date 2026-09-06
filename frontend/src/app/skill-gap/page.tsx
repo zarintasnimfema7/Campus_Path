@@ -1,4 +1,6 @@
 "use client";
+import { WorkflowDataState } from "@/components/workflow-data-state";
+import { readSavedWorkflow } from "@/lib/saved-workflow";
 
 import {
   AlertTriangle,
@@ -48,6 +50,7 @@ export default function SkillGapPage() {
     useState<WorkflowData | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -59,19 +62,10 @@ export default function SkillGapPage() {
         return;
       }
 
-      const saved =
-        sessionStorage.getItem("campuspath_workflow");
-
-      if (!saved) {
-        router.replace("/onboarding");
-        return;
-      }
-
       try {
-        setWorkflow(JSON.parse(saved));
+        setWorkflow(readSavedWorkflow() as WorkflowData | null);
       } catch {
-        router.replace("/onboarding");
-        return;
+        setLoadError(true);
       }
 
       setLoading(false);
@@ -86,7 +80,7 @@ export default function SkillGapPage() {
     router.replace("/login");
   }
 
-  if (loading || !workflow) {
+  if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#F4F6FA]">
         <div className="text-center">
@@ -99,6 +93,8 @@ export default function SkillGapPage() {
       </main>
     );
   }
+
+  if (loadError || !workflow?.skill_gap) return <WorkflowDataState title={loadError ? "Analysis unavailable" : "No skill-gap analysis is available yet"} error={loadError} />;
 
   const gap = workflow.skill_gap;
 
@@ -132,6 +128,8 @@ export default function SkillGapPage() {
         <Logo />
 
         <button
+          aria-label="Open navigation"
+          aria-expanded={sidebarOpen}
           onClick={() => setSidebarOpen(true)}
           className="rounded-xl p-2 hover:bg-slate-100"
         >
@@ -152,13 +150,14 @@ export default function SkillGapPage() {
         className={`fixed left-0 top-0 z-50 flex h-screen w-[280px] flex-col border-r border-white/5 bg-[#07111F] text-white transition-transform duration-300 lg:translate-x-0 ${
           sidebarOpen
             ? "translate-x-0"
-            : "-translate-x-full"
+            : "-translate-x-full invisible lg:visible"
         }`}
       >
         <div className="flex h-20 items-center justify-between px-6">
           <Logo dark />
 
           <button
+            aria-label="Close navigation"
             onClick={() => setSidebarOpen(false)}
             className="rounded-lg p-2 text-slate-400 hover:bg-white/10 lg:hidden"
           >
@@ -209,7 +208,7 @@ export default function SkillGapPage() {
 
             <NavButton
              icon={<Route />}
-              label="Learning Path"
+              label="Learning Plan"
               onClick={() => {
               setSidebarOpen(false);
              router.push("/learning-path");
@@ -218,7 +217,7 @@ export default function SkillGapPage() {
 
           <NavButton
             icon={<FaGithub />}
-            label="Evidence"
+            label="Submit GitHub Evidence"
             onClick={() =>
                 {setSidebarOpen(false);
               router.push("/evidence")
@@ -353,6 +352,20 @@ export default function SkillGapPage() {
             />
           </div>
 
+          <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
+            <h2 className="text-xl font-bold">Skill coverage</h2>
+            <p className="mt-2 text-sm text-slate-500">Counts of assessed skills by match category, not individual proficiency percentages.</p>
+            {total === 0 ? <p className="mt-4 text-sm text-slate-600">No assessed skills are available yet.</p> : (
+              <div className="mt-5 space-y-4">
+                {[{label: "Matched ? strong skills", count: matched.length, color: "bg-emerald-500"}, {label: "Partial ? needs strengthening", count: partial.length, color: "bg-amber-500"}, {label: "Missing ? major gaps", count: missing.length, color: "bg-rose-500"}].map(({label, count, color}) => (
+                  <div key={label}>
+                    <div className="mb-2 flex flex-wrap justify-between gap-2 text-sm text-slate-700"><span>{label}</span><span>{count} of {total} skills</span></div>
+                    <div aria-hidden="true" className="h-3 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${color}`} style={{width: `${count / total * 100}%`}} /></div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
           {/* SKILL DETAILS */}
 
           <section className="mt-6 rounded-[30px] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">

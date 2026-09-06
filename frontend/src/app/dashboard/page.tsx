@@ -1,4 +1,6 @@
 "use client";
+import { WorkflowDataState } from "@/components/workflow-data-state";
+import { readSavedWorkflow } from "@/lib/saved-workflow";
 
 import {
   ArrowRight,
@@ -19,10 +21,10 @@ import { useAuth, useClerk } from "@clerk/nextjs";
 
 type LearningTask = {
   title?: string;
-  skill?: string;
-  description?: string;
+  target_skill?: string;
+  action?: string;
   status?: string;
-  estimated_time?: string;
+  estimated_hours?: number;
 };
 
 type WorkflowData = {
@@ -57,6 +59,7 @@ export default function DashboardPage() {
 
   const [data, setData] = useState<WorkflowData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -68,19 +71,10 @@ export default function DashboardPage() {
         return;
       }
 
-      const savedWorkflow =
-        sessionStorage.getItem("campuspath_workflow");
-
-      if (!savedWorkflow) {
-        router.replace("/onboarding");
-        return;
-      }
-
       try {
-        setData(JSON.parse(savedWorkflow));
+        setData(readSavedWorkflow() as WorkflowData | null);
       } catch {
-        router.replace("/onboarding");
-        return;
+        setLoadError(true);
       }
 
       setLoading(false);
@@ -97,7 +91,7 @@ export default function DashboardPage() {
     router.replace("/register");
   };
 
-  if (loading || !data) {
+  if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="text-center">
@@ -110,6 +104,8 @@ export default function DashboardPage() {
       </main>
     );
   }
+
+  if (loadError || !data?.skill_gap) return <WorkflowDataState title={loadError ? "Analysis unavailable" : "No career analysis available yet"} error={loadError} />;
 
   const readiness = Math.round(
     data.skill_gap?.readiness_score ?? 0
@@ -135,6 +131,8 @@ export default function DashboardPage() {
         <Logo />
 
         <button
+          aria-label="Open navigation"
+          aria-expanded={sidebarOpen}
           onClick={() => setSidebarOpen(true)}
           className="rounded-xl p-2 hover:bg-slate-100"
         >
@@ -155,13 +153,14 @@ export default function DashboardPage() {
         className={`fixed left-0 top-0 z-50 flex h-screen w-72 flex-col border-r bg-white transition-transform lg:translate-x-0 ${
           sidebarOpen
             ? "translate-x-0"
-            : "-translate-x-full"
+            : "-translate-x-full invisible lg:visible"
         }`}
       >
         <div className="flex h-20 items-center justify-between px-7">
           <Logo />
 
           <button
+            aria-label="Close navigation"
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden"
           >
@@ -173,9 +172,11 @@ export default function DashboardPage() {
           <NavItem
             icon={<TrendingUp />}
             label="Dashboard"
+            onClick={() => { setSidebarOpen(false); router.push("/dashboard"); }}
             active
           />
 
+          <NavItem icon={<TrendingUp />} label="Readiness Score" onClick={() => { setSidebarOpen(false); document.getElementById("readiness")?.scrollIntoView({ behavior: "smooth" }); }} />
           <NavItem
             icon={<Target />}
             label="Skill Gap"
@@ -184,13 +185,13 @@ export default function DashboardPage() {
 
           <NavItem
             icon={<BookOpen />}
-            label="Learning Path"
+            label="Learning Plan"
                 onClick={() => router.push("/learning-path")}
           />
 
           <NavItem
             icon={<CheckCircle2 />}
-            label="Evidence"
+            label="Submit GitHub Evidence"
             onClick={() => router.push("/evidence")}
           />
 
@@ -245,7 +246,7 @@ export default function DashboardPage() {
           {/* TOP CARDS */}
           <div className="grid gap-6 xl:grid-cols-[1.25fr_1fr]">
             {/* READINESS */}
-            <section className="overflow-hidden rounded-3xl bg-[#071126] p-7 text-white shadow-sm sm:p-9">
+            <section id="readiness" className="scroll-mt-20 overflow-hidden rounded-3xl bg-[#071126] p-7 text-white shadow-sm sm:p-9">
               <div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-center">
                 <div>
                   <p className="text-sm font-semibold uppercase tracking-wider text-indigo-300">
@@ -344,6 +345,12 @@ export default function DashboardPage() {
             </section>
           </div>
 
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button onClick={() => router.push("/skill-gap")} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold">View Skill Gaps</button>
+            <button onClick={() => router.push("/learning-path")} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold">View Learning Plan</button>
+            <button onClick={() => router.push("/evidence")} className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white">Submit Evidence</button>
+          </div>
+          <p className="mt-4 text-sm text-slate-500">Your current plan has {tasks.length} tasks. Task completion and recent evidence history are not available yet.</p>
           {/* SKILLS */}
           <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
             <div className="mb-7">
@@ -415,25 +422,25 @@ export default function DashboardPage() {
                       <div>
                         <h3 className="font-semibold">
                           {task.title ||
-                            task.skill ||
+                            task.target_skill ||
                             `Learning task ${index + 1}`}
                         </h3>
 
-                        {task.description && (
+                        {task.action && (
                           <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">
-                            {task.description}
+                            {task.action}
                           </p>
                         )}
 
                         <div className="mt-2 flex items-center gap-4 text-xs text-slate-400">
-                          {task.skill && (
-                            <span>{task.skill}</span>
+                          {task.target_skill && (
+                            <span>{task.target_skill}</span>
                           )}
 
-                          {task.estimated_time && (
+                          {task.estimated_hours && (
                             <span className="flex items-center gap-1">
                               <Clock3 className="h-3.5 w-3.5" />
-                              {task.estimated_time}
+                              {task.estimated_hours} hours
                             </span>
                           )}
                         </div>

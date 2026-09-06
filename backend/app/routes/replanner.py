@@ -1,3 +1,5 @@
+from app.services.access_logs import log_access_event
+from starlette.concurrency import run_in_threadpool
 from fastapi import (
     APIRouter,
     Depends,
@@ -33,14 +35,16 @@ async def replan(
         
         authenticated_user_id = current_user["id"]
 
-        return await replan_student(
+        result = await replan_student(
             request
         )
+        await run_in_threadpool(log_access_event, authenticated_user_id, "plan_replanned", "plan")
+        return result
 
     except ValueError as error:
         raise HTTPException(
             status_code=400,
-            detail=str(error),
+            detail="The supplied analysis input is invalid.",
         )
 
     except HTTPException:
@@ -49,7 +53,5 @@ async def replan(
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=(
-                f"Replanning failed: {str(error)}"
-            ),
+            detail="Analysis is temporarily unavailable.",
         )

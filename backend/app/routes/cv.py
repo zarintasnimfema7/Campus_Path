@@ -1,3 +1,5 @@
+from fastapi import Depends
+from app.auth.dependencies import get_current_user
 from fastapi import (
     APIRouter,
     File,
@@ -27,6 +29,7 @@ MAX_FILE_SIZE = 5 * 1024 * 1024
 )
 async def analyze_cv(
     file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
 ):
 
     try:
@@ -66,11 +69,11 @@ async def analyze_cv(
     except ValueError as error:
         raise HTTPException(
             status_code=400,
-            detail=str(error),
+            detail="The supplied analysis input is invalid.",
         )
 
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"CV analysis failed: {str(error)}",
+            detail="Analysis is temporarily unavailable.",
         )

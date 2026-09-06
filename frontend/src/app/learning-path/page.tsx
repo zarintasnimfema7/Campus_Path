@@ -1,15 +1,15 @@
 "use client";
+import { WorkflowDataState } from "@/components/workflow-data-state";
+import { readSavedWorkflow } from "@/lib/saved-workflow";
 
 import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
-  CheckCircle2,
   Circle,
   Clock3,
   GraduationCap,
   LayoutDashboard,
-  Lock,
   LogOut,
   Menu,
   Route,
@@ -26,12 +26,12 @@ import { useAuth, useClerk } from "@clerk/nextjs";
 
 type LearningTask = {
   title?: string;
-  skill?: string;
-  description?: string;
-  status?: string;
-  estimated_time?: string;
-  learning_goal?: string;
-  deliverable?: string;
+  target_skill?: string;
+  action?: string;
+  estimated_hours?: number;
+  goal?: string;
+  evidence_required?: string[];
+  priority?: number;
 };
 
 type WorkflowData = {
@@ -61,6 +61,7 @@ export default function LearningPathPage() {
     useState<WorkflowData | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -72,19 +73,10 @@ export default function LearningPathPage() {
         return;
       }
 
-      const saved =
-        sessionStorage.getItem("campuspath_workflow");
-
-      if (!saved) {
-        router.replace("/onboarding");
-        return;
-      }
-
       try {
-        setWorkflow(JSON.parse(saved));
+        setWorkflow(readSavedWorkflow() as WorkflowData | null);
       } catch {
-        router.replace("/onboarding");
-        return;
+        setLoadError(true);
       }
 
       setLoading(false);
@@ -99,7 +91,7 @@ export default function LearningPathPage() {
     router.replace("/register");
   };
 
-  if (loading || !workflow) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F4F6FA]">
         <div className="text-center">
@@ -113,6 +105,8 @@ export default function LearningPathPage() {
     );
   }
 
+  if (loadError || !workflow?.plan) return <WorkflowDataState title={loadError ? "Analysis unavailable" : "No learning plan is available yet"} error={loadError} />;
+
   const tasks = workflow.plan?.tasks ?? [];
 
   const readiness = Math.round(
@@ -122,11 +116,6 @@ export default function LearningPathPage() {
   const role =
     workflow.job?.job_title ?? "Target role";
 
-  const completedTasks = tasks.filter(
-    (task) =>
-      task.status?.toLowerCase() === "completed"
-  ).length;
-
   return (
     <div className="min-h-screen bg-[#F4F6FA] text-[#111827]">
       {/* MOBILE HEADER */}
@@ -134,6 +123,8 @@ export default function LearningPathPage() {
         <Logo />
 
         <button
+          aria-label="Open navigation"
+          aria-expanded={sidebarOpen}
           onClick={() => setSidebarOpen(true)}
           className="rounded-xl p-2 transition hover:bg-slate-100"
         >
@@ -153,13 +144,14 @@ export default function LearningPathPage() {
         className={`fixed left-0 top-0 z-50 flex h-screen w-[280px] flex-col border-r border-white/5 bg-[#07111F] text-white transition-transform duration-300 lg:translate-x-0 ${
           sidebarOpen
             ? "translate-x-0"
-            : "-translate-x-full"
+            : "-translate-x-full invisible lg:visible"
         }`}
       >
         <div className="flex h-20 items-center justify-between px-6">
           <Logo dark />
 
           <button
+            aria-label="Close navigation"
             onClick={() => setSidebarOpen(false)}
             className="rounded-lg p-2 text-slate-400 hover:bg-white/10 lg:hidden"
           >
@@ -213,7 +205,7 @@ export default function LearningPathPage() {
 
   <NavButton
     icon={<Route />}
-    label="Learning Path"
+    label="Learning Plan"
     active
     onClick={() => {
       setSidebarOpen(false);
@@ -223,7 +215,7 @@ export default function LearningPathPage() {
 
   <NavButton
     icon={<FaGithub />}
-    label="Evidence"
+    label="Submit GitHub Evidence"
     onClick={() => {
       setSidebarOpen(false);
       router.push("/evidence");
@@ -293,8 +285,8 @@ export default function LearningPathPage() {
                 />
 
                 <HeroMetric
-                  value={`${completedTasks}`}
-                  label="Done"
+                  value="Not available"
+                  label="Completion status"
                 />
 
                 <HeroMetric
@@ -324,7 +316,7 @@ export default function LearningPathPage() {
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-500 shadow-sm">
-              {completedTasks} of {tasks.length} completed
+              {tasks.length} tasks in the current plan
             </div>
           </div>
 
@@ -363,6 +355,11 @@ export default function LearningPathPage() {
             </div>
           )}
 
+          <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8">
+            <h2 className="text-xl font-bold text-slate-950">Learning plan history</h2>
+            <p className="mt-3 text-sm text-slate-600">No previous plan versions yet.</p>
+            <p className="mt-2 text-sm text-slate-500">Only your current plan is available. Previous versions and their timestamps are not provided.</p>
+          </section>
           {/* NEXT ACTION */}
           {tasks.length > 0 && (
             <section className="mt-8 overflow-hidden rounded-[28px] border border-violet-100 bg-gradient-to-r from-[#F1EDFF] via-white to-[#EAFBFA] p-6 sm:p-8">
@@ -416,30 +413,21 @@ function RoadmapTask({
   total: number;
   onEvidence: () => void;
 }) {
-  const completed =
-    task.status?.toLowerCase() === "completed";
-
   return (
     <article className="relative sm:pl-[76px]">
       <div
         className={`absolute left-0 top-8 z-10 hidden h-[52px] w-[52px] items-center justify-center rounded-2xl border-4 border-[#F4F6FA] text-sm font-bold shadow-sm sm:flex ${
-          completed
-            ? "bg-emerald-500 text-white"
-            : index === 0
+          index === 0
               ? "bg-violet-600 text-white"
               : "bg-white text-slate-400"
         }`}
       >
-        {completed ? (
-          <CheckCircle2 className="h-5 w-5" />
-        ) : (
-          index + 1
-        )}
+        {index + 1}
       </div>
 
       <div
         className={`group rounded-[26px] border bg-white p-6 shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-slate-900/5 sm:p-7 ${
-          index === 0 && !completed
+          index === 0
             ? "border-violet-200"
             : "border-slate-200"
         }`}
@@ -451,36 +439,32 @@ function RoadmapTask({
                 Step {index + 1}/{total}
               </span>
 
-              {task.skill && (
+              {task.target_skill && (
                 <span className="rounded-full bg-violet-50 px-3 py-1 text-[11px] font-bold text-violet-700">
-                  {task.skill}
+                  {task.target_skill}
                 </span>
               )}
 
-              {completed && (
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">
-                  Completed
-                </span>
-              )}
             </div>
 
             <h3 className="text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
               {task.title ||
-                task.skill ||
+                task.target_skill ||
                 `Learning task ${index + 1}`}
             </h3>
 
-            {task.description && (
+            {task.action && (
               <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-500">
-                {task.description}
+                {task.action}
               </p>
             )}
 
             <div className="mt-5 flex flex-wrap gap-3">
-              {task.estimated_time && (
+              {task.priority != null && <span className="text-sm text-slate-600">Priority {task.priority}</span>}
+              {task.estimated_hours && (
                 <SmallInfo
                   icon={<Clock3 />}
-                  text={task.estimated_time}
+                  text={`${task.estimated_hours} hours`}
                 />
               )}
 
@@ -489,45 +473,32 @@ function RoadmapTask({
                 text="Hands-on learning"
               />
 
-              <SmallInfo
-                icon={
-                  completed ? (
-                    <CheckCircle2 />
-                  ) : (
-                    <Circle />
-                  )
-                }
-                text={
-                  completed
-                    ? "Evidence verified"
-                    : "Evidence required"
-                }
-              />
+              <SmallInfo icon={<Circle />} text="Completion status unavailable" />
             </div>
 
-            {(task.learning_goal ||
-              task.deliverable) && (
+            {(task.goal ||
+              task.evidence_required?.join(", ")) && (
               <div className="mt-5 grid gap-3 md:grid-cols-2">
-                {task.learning_goal && (
+                {task.goal && (
                   <div className="rounded-2xl bg-slate-50 p-4">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                       Learning goal
                     </p>
 
                     <p className="mt-2 text-sm leading-6 text-slate-600">
-                      {task.learning_goal}
+                      {task.goal}
                     </p>
                   </div>
                 )}
 
-                {task.deliverable && (
+                {task.evidence_required?.join(", ") && (
                   <div className="rounded-2xl bg-cyan-50/60 p-4">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-700">
                       Evidence to build
                     </p>
 
                     <p className="mt-2 text-sm leading-6 text-slate-600">
-                      {task.deliverable}
+                      {task.evidence_required?.join(", ")}
                     </p>
                   </div>
                 )}
@@ -541,9 +512,7 @@ function RoadmapTask({
           >
             <FaGithub className="h-4 w-4" />
 
-            {completed
-              ? "View evidence"
-              : "Submit evidence"}
+            Submit evidence
 
             <ArrowRight className="h-4 w-4" />
           </button>
@@ -589,7 +558,7 @@ function HeroMetric({
       }`}
     >
       <p
-        className={`text-2xl font-bold ${
+        className={`break-words text-lg font-bold sm:text-2xl ${
           accent ? "text-cyan-300" : "text-white"
         }`}
       >

@@ -1,8 +1,9 @@
 "use client";
+import Link from "next/link";
+import { readSavedWorkflow } from "@/lib/saved-workflow";
 
 import {
   Award,
-  BookOpen,
   BriefcaseBusiness,
   CheckCircle2,
   GraduationCap,
@@ -12,7 +13,6 @@ import {
   Route,
   Sparkles,
   Target,
-  User,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -51,7 +51,7 @@ type Workflow = {
 export default function ProfilePage() {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useAuth();
-  const { signOut } = useClerk();
+  const { signOut, openUserProfile } = useClerk();
   const { user } = useUser();
 
   const [workflow, setWorkflow] =
@@ -59,6 +59,7 @@ export default function ProfilePage() {
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     function loadProfile() {
@@ -71,17 +72,11 @@ export default function ProfilePage() {
 
       setEmail(user?.primaryEmailAddress?.emailAddress ?? "");
 
-      const stored =
-        sessionStorage.getItem("campuspath_workflow");
-
-      if (stored) {
-        try {
-          setWorkflow(JSON.parse(stored));
-        } catch {
-          setWorkflow({});
-        }
-      } else {
+      try {
+        setWorkflow((readSavedWorkflow() as Workflow | null) ?? {});
+      } catch {
         setWorkflow({});
+        setLoadError(true);
       }
 
       setLoading(false);
@@ -99,7 +94,7 @@ export default function ProfilePage() {
   if (loading || !workflow) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F4F6FA]">
-        <div className="h-11 w-11 animate-spin rounded-full border-4 border-slate-200 border-t-violet-600" />
+        <p role="status" className="text-slate-600">Loading your profile...</p>
       </div>
     );
   }
@@ -107,8 +102,8 @@ export default function ProfilePage() {
   const student = workflow.student ?? {};
 
   const name =
+    user?.fullName ||
     student.name ||
-    sessionStorage.getItem("campuspath_name") ||
     "CampusPath Student";
 
   const initials = name
@@ -118,9 +113,7 @@ export default function ProfilePage() {
     .slice(0, 2)
     .toUpperCase();
 
-  const readiness = Math.round(
-    workflow.skill_gap?.readiness_score ?? 0
-  );
+  const readiness = workflow.skill_gap ? Math.round(workflow.skill_gap.readiness_score ?? 0) : null;
 
   const skills = student.skills ?? [];
   const education = student.education ?? [];
@@ -132,10 +125,10 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-[#F4F6FA]">
       {/* NAV */}
       <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-        <div className="mx-auto flex h-20 max-w-[1400px] items-center justify-between px-5 sm:px-8 lg:px-10">
+        <div className="mx-auto flex min-h-20 max-w-[1400px] flex-wrap gap-3 py-3 items-center justify-between px-5 sm:px-8 lg:px-10">
           <Logo />
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <NavButton
               label="Dashboard"
               icon={<LayoutDashboard />}
@@ -144,7 +137,9 @@ export default function ProfilePage() {
               }
             />
 
+            <button onClick={() => openUserProfile()} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600">Account settings</button>
             <button
+              aria-label="Sign out"
               onClick={logout}
               className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
             >
@@ -158,6 +153,8 @@ export default function ProfilePage() {
       </header>
 
       <main className="mx-auto max-w-[1400px] px-5 py-8 sm:px-8 lg:px-10 lg:py-10">
+        {loadError && <p role="alert" className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">We could not read your saved career analysis. Your account information is still available.</p>}
+        {!workflow.student && <p role="status" className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">No CV analysis is available yet. <Link href="/onboarding" className="text-indigo-700 underline">Start an analysis</Link> to add career information.</p>}
         {/* PROFILE HERO */}
         <section className="relative overflow-hidden rounded-[32px] bg-[#07111F] p-7 text-white shadow-xl shadow-slate-900/5 sm:p-10">
           <div className="absolute -right-20 -top-32 h-80 w-80 rounded-full bg-violet-500/20 blur-3xl" />
@@ -182,14 +179,14 @@ export default function ProfilePage() {
 
                 <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-300">
                   {email && (
-                    <span className="flex items-center gap-2">
+                    <span className="flex min-w-0 break-all items-center gap-2">
                       <Mail className="h-4 w-4 text-violet-300" />
                       {email}
                     </span>
                   )}
 
                   {workflow.job?.job_title && (
-                    <span className="flex items-center gap-2">
+                    <span className="flex min-w-0 break-all items-center gap-2">
                       <Target className="h-4 w-4 text-cyan-300" />
                       {workflow.job.job_title}
                     </span>
@@ -205,11 +202,11 @@ export default function ProfilePage() {
 
               <div className="mt-2 flex items-end">
                 <span className="text-5xl font-bold">
-                  {readiness}
+                  {readiness ?? "Not available"}
                 </span>
 
                 <span className="mb-1 text-xl text-cyan-300">
-                  %
+                  {readiness !== null ? "%" : ""}
                 </span>
               </div>
             </div>
@@ -507,7 +504,7 @@ function NavButton({
   return (
     <button
       onClick={onClick}
-      className="hidden h-11 items-center gap-2 rounded-xl px-4 text-sm font-bold text-slate-500 transition hover:bg-violet-50 hover:text-violet-700 sm:flex"
+      className="flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-bold text-slate-500 transition hover:bg-violet-50 hover:text-violet-700 sm:flex"
     >
       {icon}
       {label}
@@ -516,9 +513,10 @@ function NavButton({
 }
 
 function Logo() {
+  const router = useRouter();
   return (
     <button
-      onClick={() => {}}
+      onClick={() => { router.push("/dashboard"); }}
       className="flex items-center gap-3"
     >
       <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white">
