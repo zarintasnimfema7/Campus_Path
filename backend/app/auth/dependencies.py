@@ -1,4 +1,5 @@
 import os
+import logging
 
 from dotenv import load_dotenv
 from fastapi import HTTPException, Request, status
@@ -66,7 +67,7 @@ async def get_current_user(
         raise
 
     except Exception as error:
-        print("Clerk authentication error:", error)
+        logging.getLogger(__name__).warning("Clerk authentication failed.")
 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

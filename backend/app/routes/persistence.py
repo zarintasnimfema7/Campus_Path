@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from app.auth.dependencies import get_current_user
+from app.services.access_logs import log_access_event
 
 from app.models.persistence import (
     CreateUserRequest,
@@ -28,111 +30,143 @@ router = APIRouter(
 @router.post("/users")
 def create_user_route(
     request: CreateUserRequest,
+    current_user=Depends(get_current_user),
 ):
 
     try:
-        return create_user(
+        result = create_user(
+            current_user["id"],
             request.name,
-            request.email,
+            current_user.get("email"),
             request.github_username,
         )
+        log_access_event(current_user["id"], "profile_updated", "profile")
+        return result
 
-    except Exception as error:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail="Could not save the requested data.",
         )
 
 
 @router.post("/jobs")
 def save_job_route(
     request: SaveJobRequest,
+    current_user=Depends(get_current_user),
 ):
 
     try:
-        return save_job_target(
-            request.user_id,
+        result = save_job_target(
+            current_user["id"],
             request.raw_description,
             request.job,
         )
+        log_access_event(current_user["id"], "job_saved", "job")
+        return result
 
-    except Exception as error:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail="Could not save the requested data.",
         )
 
 
 @router.post("/profiles")
 def save_profile_route(
     request: SaveProfileRequest,
+    current_user=Depends(get_current_user),
 ):
 
     try:
-        return save_student_profile(
-            request.user_id,
+        result = save_student_profile(
+            current_user["id"],
             request.profile,
         )
+        log_access_event(current_user["id"], "profile_updated", "profile")
+        return result
 
-    except Exception as error:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail="Could not save the requested data.",
         )
 
 
 @router.post("/skill-gaps")
 def save_skill_gap_route(
     request: SaveSkillGapRequest,
+    current_user=Depends(get_current_user),
 ):
 
     try:
-        return save_skill_gap(
-            request.user_id,
+        result = save_skill_gap(
+            current_user["id"],
             request.job_target_id,
             request.skill_gap,
         )
+        log_access_event(current_user["id"], "skill_gap_saved", "skill_gap")
+        return result
 
-    except Exception as error:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail="Could not save the requested data.",
         )
 
 
 @router.post("/plans")
 def save_plan_route(
     request: SavePlanRequest,
+    current_user=Depends(get_current_user),
 ):
 
     try:
-        return save_learning_plan(
-            request.user_id,
+        result = save_learning_plan(
+            current_user["id"],
             request.job_target_id,
             request.plan,
             request.readiness_score,
         )
+        log_access_event(current_user["id"], "plan_saved", "plan")
+        return result
 
-    except Exception as error:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail="Could not save the requested data.",
         )
 
 
 @router.post("/evidence")
 def save_evidence_route(
     request: SaveEvidenceRequest,
+    current_user=Depends(get_current_user),
 ):
 
     try:
-        return save_evidence(
+        result = save_evidence(
             request.task_id,
             request.verification,
+            user_id=current_user["id"],
         )
+        log_access_event(current_user["id"], "evidence_submitted", "evidence")
+        return result
 
-    except Exception as error:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
             status_code=500,
-            detail=str(error),
+            detail="Could not save the requested data.",
         )

@@ -8,6 +8,7 @@ from app.models.plan import LearningTask
 class EvidenceVerificationRequest(BaseModel):
     repository_url: str
     task: LearningTask
+    task_id: str | None = None
 
 
 class EvidenceCheck(BaseModel):

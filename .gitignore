@@ -13,3 +13,10 @@ frontend/node_modules/
 frontend/.next/
 frontend/.env.local
 .neon
+
+# Local credential material (Cloud Run will use attached service identities).
+*.pem
+*.key
+*service-account*.json
+*service_account*.json
+application_default_credentials.json

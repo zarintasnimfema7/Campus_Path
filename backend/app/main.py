@@ -3,86 +3,16 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes.cv import router as cv_router
-
-from app.routes.jobs import router as jobs_router
-
-from app.routes.skill_gap import (
-    router as skill_gap_router,
-)
-
-from app.routes.planner import (
-    router as planner_router,
-)
-
-from app.routes.evidence import (
-    router as evidence_router,
-)
-
-from app.routes.replanner import (
-    router as replanner_router,
-)
-
-from app.database.neon import test_database_connection
-
-from app.routes.persistence import (
-    router as persistence_router,
-)
-
-from app.routes.workflow import (
-    router as workflow_router,
-)
 
 load_dotenv()
 
 
-app = FastAPI(
-    title="CampusPath API",
-    description="Backend API for the CampusPath Agent.",
-    version="0.1.0",
-)
-
-
-frontend_url = os.getenv(
-    "FRONTEND_URL",
-    "http://localhost:3000",
-)
-
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[frontend_url],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-app.include_router(jobs_router)
-
-app.include_router(jobs_router)
-app.include_router(cv_router)
-
-app.include_router(skill_gap_router)
-
-app.include_router(planner_router)
-
-app.include_router(evidence_router)
-
-app.include_router(replanner_router)
-
-app.include_router(persistence_router)
-app.include_router(workflow_router)
-
-
-@app.get("/")
 def root():
     return {
         "message": "CampusPath backend is running"
     }
 
 
-@app.get("/health")
 def health():
     return {
         "status": "ok",
@@ -93,10 +23,11 @@ def health():
     }
 
 
-@app.get("/database/health")
 def database_health():
 
     try:
+        from app.database.neon import test_database_connection
+
         test_database_connection()
 
         return {
@@ -110,5 +41,53 @@ def database_health():
         return {
             "status": "error",
             "connected": False,
-            "detail": str(error),
+            "detail": "Database is temporarily unavailable.",
         }
+
+
+def create_app():
+    role = os.getenv("SERVICE_ROLE", "api")
+    if role not in {"api", "worker"}:
+        raise ValueError("SERVICE_ROLE must be 'api' or 'worker'.")
+
+    app = FastAPI(
+        title="CampusPath API" if role == "api" else "CampusPath Worker",
+        description="Backend API for the CampusPath Agent.",
+        version="0.1.0",
+        docs_url="/docs" if role == "api" else None,
+        redoc_url="/redoc" if role == "api" else None,
+        openapi_url="/openapi.json" if role == "api" else None,
+    )
+    app.add_api_route("/health", health, methods=["GET"])
+
+    if role == "worker":
+        from app.routes.workflow_worker import router as worker_router
+
+        app.include_router(worker_router)
+    else:
+        # Import only the selected role's routers; no duplicated business logic.
+        from app.routes.cv import router as cv_router
+        from app.routes.jobs import router as jobs_router
+        from app.routes.skill_gap import router as skill_gap_router
+        from app.routes.planner import router as planner_router
+        from app.routes.evidence import router as evidence_router
+        from app.routes.replanner import router as replanner_router
+        from app.routes.persistence import router as persistence_router
+        from app.routes.workflow import router as workflow_router
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:3000")],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        for router in (jobs_router, cv_router, skill_gap_router, planner_router,
+                       evidence_router, replanner_router, persistence_router, workflow_router):
+            app.include_router(router)
+        app.add_api_route("/", root, methods=["GET"])
+        app.add_api_route("/database/health", database_health, methods=["GET"])
+    return app
+
+
+app = create_app()
