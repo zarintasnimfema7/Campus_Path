@@ -2,6 +2,7 @@ import importlib
 import os
 from pathlib import Path
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import Mock, patch
 from uuid import UUID
 
@@ -62,6 +63,21 @@ class WorkflowStartTests(unittest.TestCase):
                 response = self.post({'job_description': 'JD', 'target_role': supplied})
                 self.assertEqual(response.status_code, 202)
                 self.assertEqual(self.create_workflow_job.call_args.kwargs['target_role'], expected)
+
+    def test_concurrent_starts_preserve_same_and_distinct_user_keys(self):
+        # HTTP identity verification/override rejection is covered separately above.
+        for users in [('user_A',) * 3, ('user_A', 'user_B', 'user_C')]:
+            with self.subTest(users=users):
+                self.publish_workflow_job.reset_mock()
+                def start(user):
+                    return self.route.start_workflow('JD', Mock(), None, {'id': user})
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    results = list(executor.map(start, users))
+                expected = {str(result.job_id): user for result, user in zip(results, users)}
+                actual = {call.kwargs['job_id']: call.kwargs['ordering_key']
+                          for call in self.publish_workflow_job.call_args_list}
+                self.assertEqual(len(expected), 3)
+                self.assertEqual(actual, expected)
 
     def test_ordering_identity_cannot_be_overridden(self):
         response = self.client.post(

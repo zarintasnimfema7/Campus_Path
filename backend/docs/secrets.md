@@ -24,8 +24,9 @@ the later deployment process. See Google's
 
 Use Application Default Credentials locally and attached service identity later;
 do not package service-account JSON. No new credential mechanism is needed.
-Worker/API variables should be supplied only where used. Alembic currently reads
-the local `backend/.env` database target; do not check it in or bake it into artifacts.
+Worker/API variables should be supplied only where used. Online Alembic uses an
+explicit `DATABASE_URL` first, then local `backend/.env`; offline SQL validation
+reads neither. Do not check environment files in or bake them into artifacts.
 Choose the future migration execution environment separately during deployment.
 
 ## Frontend / Vercel (manual, later)

@@ -18,6 +18,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 import { useSignUp } from "@clerk/nextjs";
@@ -26,13 +27,21 @@ import { useSignUp } from "@clerk/nextjs";
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 60;
 
+// sessionStorage is external browser state; keep the server snapshot hydration-safe.
+const subscribeToEmail = (onChange: () => void) => {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+};
+const readEmail = () => sessionStorage.getItem("campuspath_email") ?? "";
+const serverEmail = () => "";
+
 
 export default function VerifyOtpPage() {
   const router = useRouter();
 
   const { signUp, fetchStatus } = useSignUp();
 
-  const [email, setEmail] = useState("");
+  const email = useSyncExternalStore(subscribeToEmail, readEmail, serverEmail);
 
   const [otp, setOtp] = useState<string[]>(
     Array(OTP_LENGTH).fill("")
@@ -66,8 +75,6 @@ export default function VerifyOtpPage() {
       router.replace("/register");
       return;
     }
-
-    setEmail(savedEmail);
 
     inputRefs.current[0]?.focus();
   }, [router]);

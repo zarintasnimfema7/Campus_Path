@@ -5,6 +5,8 @@ import os
 import sys
 from types import ModuleType
 import unittest
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
@@ -147,6 +149,54 @@ class WorkflowWorkerTests(unittest.TestCase):
         self.download_cv.assert_called_once()
         self.workflow.assert_awaited_once()
         self.mark_workflow_job_completed.assert_called_once()
+
+    def test_duplicate_while_first_delivery_is_in_flight(self):
+        state = {'status': 'queued'}
+        lock = threading.Lock()
+        started, release = threading.Event(), threading.Event()
+        def claim(job_id):
+            with lock:
+                if state['status'] != 'queued':
+                    return None
+                state['status'] = 'processing'
+                return self.job
+        def download(path):
+            started.set()
+            if not release.wait(5):
+                raise RuntimeError('Test coordination timed out')
+            return b'CV'
+        def complete(*args):
+            state['status'] = 'completed'
+            return True
+        self.claim_workflow_job.side_effect = claim
+        self.download_cv.side_effect = download
+        self.mark_workflow_job_completed.side_effect = complete
+        self.get_workflow_job_delivery_state.side_effect = lambda _: dict(state)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            first = executor.submit(self.worker.process_workflow_job, self.job_id)
+            try:
+                self.assertTrue(started.wait(5))
+                with self.assertRaises(RuntimeError):
+                    self.worker.process_workflow_job(self.job_id)
+            finally:
+                release.set()
+            first.result(timeout=5)
+        self.assertIsNone(self.worker.process_workflow_job(self.job_id))
+        self.workflow.assert_awaited_once()
+        self.mark_workflow_job_completed.assert_called_once()
+        self.record_workflow_job_failure.assert_not_called()
+
+    def test_disappearance_after_claim_leaves_processing_without_recovery(self):
+        self.claim_workflow_job.side_effect = [self.job, None]
+        self.download_cv.side_effect = SystemExit('Simulated worker disappearance')
+        with self.assertRaises(SystemExit):
+            self.worker.process_workflow_job(self.job_id)
+        self.get_workflow_job_delivery_state.return_value = {'status': 'processing', 'retry_count': 0}
+        with self.assertRaises(RuntimeError):
+            self.worker.process_workflow_job(self.job_id)
+        self.workflow.assert_not_called()
+        self.record_workflow_job_failure.assert_not_called()
+        self.mark_workflow_job_completed.assert_not_called()
 
     def test_malformed_messages_rejected_before_claim(self):
         bad_envelopes = [
